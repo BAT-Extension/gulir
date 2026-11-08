@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Gulir",
+  "version": "1.1.0",
+  "minimum_chrome_version": "118",
+  "description": "Screenshot seluruh halaman, preview, rename, dan simpan ke subfolder Downloads.",
+  "permissions": [
+    "activeTab",
+    "debugger",
+    "downloads",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Screenshot halaman \u2022 Alt+S"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+S",
+        "mac": "Alt+S"
+      }
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self'"
+  }
+}
