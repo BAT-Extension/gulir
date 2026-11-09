@@ -1,4 +1,4 @@
-# Gulir 1.2.5 — validasi dan gate publikasi
+# Gulir 1.2.6 — validasi dan gate publikasi
 
 ## Riwayat pengujian versi sebelumnya
 - 53 unit tests (run terbaru pada MSI).
@@ -66,3 +66,12 @@ Added native Save File Picker path independent of download routing, with suggest
 
 - Final full+nested browser report: gulir-browser-9FAMrm/report.json. Browser restart retains checkbox and structured-cloned directory handle; real OPFS queryPermission granted, reuse without picker and exact saved PNG hash verified. Existing unrelated filename sentinel remains unchanged after collision.
 - Supplemental1.2.5 public Bitwarden rerun blocked before load by DNS ERR_NAME_NOT_RESOLVED. Capture code unchanged from1.2.4 verified public run; this is not a new live-page pass.
+
+## 1.2.6 preview-only close safety and authoritative filename
+- 73 unit tests pass. Removed window.close from preview paths; close helper validates executing extension URL and current-tab ID, removes only that tab, and refuses to remove Chrome's last remaining tab.
+- Real Chrome redacts tab.url without tabs permission; guard now validates the executing extension location and Chrome-provided self ID without requiring additional access.
+- Normal save now opens directory picker and writes the exact preview filename, as quick-save already did. Existing names are skipped via numbered suffix; no automatic Downloads route. Native folder chooser still simulated with real OPFS writes in browser tests.
+- Original user's entire-browser shutdown/name substitution is not asserted reproduced; changes constrain closure and filename paths and are verified against actual browser tab/window behavior.
+
+- Final full+nested evidence: gulir-browser-aZlQDS/report.json. Two independent normal windows and all their tabs survive successful save/countdown/error expiry. Last-tab timer, direct helper and saved-file closure all leave the sole preview open. Generated and edited filenames are exact, collision suffix preserves originals.
+- In a disposable profile the legacy window.close removed the sole preview window; automation connection was still alive immediately afterward. Entire Chrome process exit is not proven.

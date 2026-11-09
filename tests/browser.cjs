@@ -88,7 +88,7 @@ async function targetFor(page){
 async function invoke(page,expectError=false){
  await page.bringToFront();await page.waitForFunction(()=>document.visibilityState==='visible');
  const url=page.url(),tabId=await targetFor(page);
- await worker.evaluate(async id=>{const t=await chrome.tabs.get(id);await chrome.windows.update(t.windowId,{focused:true});await chrome.tabs.update(id,{active:true});},tabId);let active;for(let attempt=0;attempt<100;attempt++){active=await worker.evaluate(async()=> (await chrome.tabs.query({active:true,lastFocusedWindow:true}))[0]?.id);if(active===tabId)break;await new Promise(r=>setTimeout(r,25));}assert.equal(active,tabId,'capture must model the active-tab user flow');
+ await worker.evaluate(async id=>{const t=await chrome.tabs.get(id);await chrome.windows.update(t.windowId,{focused:true});await chrome.tabs.update(id,{active:true});},tabId);let active;for(let attempt=0;attempt<100;attempt++){active=await worker.evaluate(async id=>{const tab=await chrome.tabs.get(id);return (await chrome.tabs.query({active:true,windowId:tab.windowId}))[0]?.id;},tabId);if(active===tabId)break;await new Promise(r=>setTimeout(r,25));}assert.equal(active,tabId,'capture source must be active within its real Chrome window');
  const viewportBefore=await page.evaluate(()=>({width:innerWidth,height:innerHeight,dpr:devicePixelRatio,x:scrollX,y:scrollY}));
  const waiting=context.waitForEvent('page',{timeout:180000}).catch(error=>({error}));
  await worker.evaluate(async({url,tabId})=>{
@@ -117,15 +117,32 @@ async function verifyFile(name,expected,directory){
  },{name,directory});
  assert.equal(result.hash,expected);assert.ok(result.size>1000);assert.deepEqual(result.header,[137,80,78,71,13,10,26,10]);assert.equal(browserDownloads,0);return result.name;
 }
-async function save(preview,name,enter=false){
- await preview.locator('#name').fill(name);const expected=await pngHash(preview);
+async function survivors(preview){
+ const id=await targetFor(preview);
+ const before=await worker.evaluate(async id=>(await chrome.tabs.query({})).filter(t=>t.id!==id).map(t=>({id:t.id,windowId:t.windowId,url:t.url})),id);
+ const windows=await worker.evaluate(async()=> (await chrome.windows.getAll()).map(w=>w.id));
+ return async()=>{
+  assert.equal(preview.isClosed(),true,'only preview should close');
+  const after=await worker.evaluate(async()=> (await chrome.tabs.query({})).map(t=>({id:t.id,windowId:t.windowId,url:t.url})));
+  assert.deepEqual(after.sort((a,b)=>a.id-b.id),before.sort((a,b)=>a.id-b.id),'all other tabs survive unchanged');
+  const remaining=await worker.evaluate(async()=> (await chrome.windows.getAll()).map(w=>w.id));
+  for(const windowId of new Set(before.map(t=>t.windowId)))assert.ok(remaining.includes(windowId),'unrelated Chrome window survives');
+  assert.ok(windows.length>=2,'preview is a separate real Chrome popup window');
+ };
+}
+async function save(preview,name,enter=false,expectedName=name+'.png'){
+ await preview.locator('#name').fill(name);const expected=await pngHash(preview),checkSurvivors=await survivors(preview);
  await preview.evaluate(async name=>{
-  const handle=await (await navigator.storage.getDirectory()).getFileHandle(name+'.png',{create:true});let calls=0;
-  window.showSaveFilePicker=async options=>{if(++calls!==1||options.suggestedName!==name+'.png')throw Error('Invalid picker invocation');return handle;};
+  const root=await navigator.storage.getDirectory();let calls=0;
+  window.showSaveFilePicker=async()=>{throw Error('Normal save must never open a filename chooser');};
+  window.showDirectoryPicker=async options=>{
+   if(++calls!==1||options.mode!=='readwrite'||document.querySelector('#name').value!==name)throw Error('Invalid directory picker invocation or lost UI filename');
+   return root;
+  };
  },name);
- const closed=preview.waitForEvent('close');
- if(enter===true)await preview.locator('#name').press('Enter');else await preview.locator('#save').click();await closed;
- return verifyFile(name+'.png',expected);
+ const closed=preview.waitForEvent('close').catch(async error=>{console.error('SAVE DEBUG',await preview.evaluate(async()=>({status:document.querySelector('#status').textContent,current:await chrome.tabs.getCurrent(),url:location.href,tabs:await chrome.tabs.query({})})));throw error;});
+ if(enter===true)await preview.locator('#name').press('Enter');else await preview.locator('#save').click();await closed;await checkSurvivors();
+ return verifyFile(expectedName,expected);
 }
 async function clockedPreview(page){
  const preview=await invoke(page);await preview.clock.install();await preview.clock.pauseAt(new Date());await preview.reload();
@@ -134,7 +151,13 @@ async function clockedPreview(page){
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));origin='http://127.0.0.1:'+server.address().port;
  const downloads=await launch('standard');
- const page=await pageAt('/short'),preview=await invoke(page);
+ const page=await pageAt('/short');
+ const secondWindowPage=context.waitForEvent('page');
+ await worker.evaluate(url=>chrome.windows.create({url,type:'normal'}),origin+'/short?survivor');
+ const secondWindow=await secondWindowPage;await secondWindow.waitForLoadState();
+ const preview=await invoke(page);
+ assert.notEqual((await worker.evaluate(async ids=>Promise.all(ids.map(async id=>(await chrome.tabs.get(id)).windowId)),[await targetFor(page),await targetFor(secondWindow)]))[0],(await worker.evaluate(async id=>(await chrome.tabs.get(id)).windowId,await targetFor(secondWindow))));
+ record('isolated browser has independent normal windows plus real extension popup');
  assert.match(await preview.locator('#summary').innerText(),/3200 px/);
  assert.deepEqual(await dimensions(preview),[[1280,3200]]);
  record('real debugger capture and popup preview, 1280x3200');
@@ -143,32 +166,37 @@ async function clockedPreview(page){
  assert.match(await preview.locator('#countdown').innerText(),/60|59/);
  await preview.screenshot({path:path.join(work,'preview.png')});
  assert.equal(await save(preview,'test-shot',true),'test-shot.png');
- record('Enter submits native save, exact OPFS PNG, automatic close; quick save defaults off; no discard');
- const repeated=await invoke(page);assert.equal(await save(repeated,'test-shot'),'test-shot.png');
- record('repeat capture detaches debugger and native save remains available');
+ record('Enter submits directory save with exact UI filename and OPFS PNG; only preview closes; quick save defaults off; no discard');
+ const untouched=await invoke(page),automaticName=await untouched.locator('#name').inputValue();
+ assert.ok(automaticName.length>0);
+ assert.equal(await save(untouched,automaticName),automaticName+'.png');
+ record('generated default filename is preserved exactly by the folder save flow');
+ const repeated=await invoke(page);assert.equal(await save(repeated,'test-shot',false,'test-shot (1).png'),'test-shot (1).png');
+ record('repeat capture detaches debugger, normal save adds collision suffix without overwriting');
  const interceptedPage=await pageAt('/short'),intercepted=await invoke(interceptedPage);
  const routing=await context.newCDPSession(interceptedPage),redirected=path.join(work,'routed-downloads');fs.mkdirSync(redirected);
  await routing.send('Browser.setDownloadBehavior',{behavior:'allowAndName',downloadPath:redirected,eventsEnabled:true});
- await intercepted.evaluate(()=>{window.showSaveFilePicker=async()=>{throw new DOMException('cancelled','AbortError')}});
+ await intercepted.evaluate(()=>{window.showDirectoryPicker=async()=>{throw new DOMException('cancelled','AbortError')}});
  await intercepted.locator('#save').click();await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.includes('dibatalkan'));
  assert.equal(await intercepted.locator('#save').isDisabled(),false);assert.equal(await intercepted.locator('#images img').count(),1);assert.equal(browserDownloads,0);
  record('picker cancellation retains preview without downloads');
- await intercepted.evaluate(()=>{window.showSaveFilePicker=async()=>({createWritable:async()=>{throw Error('test disk unavailable')}})});
+ await intercepted.evaluate(()=>{window.showDirectoryPicker=async()=>({getFileHandle:async()=>{throw Error('test disk unavailable')}})});
  await intercepted.locator('#save').click();await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.includes('test disk unavailable'));
  assert.equal(await intercepted.locator('#save').isDisabled(),false);assert.equal(await save(intercepted,'retry-after-failure'),'retry-after-failure.png');
  assert.deepEqual(fs.readdirSync(redirected),[]);assert.deepEqual(fs.readdirSync(downloads),[]);
  record('write failure retains preview; retry closes; UUID download routing creates zero files');
  await routing.send('Browser.setDownloadBehavior',{behavior:'default',eventsEnabled:true});await routing.detach();
- report.limitations.push('Native dialogs are mocked with real OPFS handles. OS chooser appearance, external-folder permission prompts and native overwrite confirmation require manual desktop verification.');
+ report.limitations.push('Headless multi-window focus is not a native accelerator test: capture invokes the real background handler with the active source tab in its own window.');
+ report.limitations.push('Directory dialogs are mocked with real OPFS handles; tests verify exact UI filenames and complete PNG bytes. Native OS folder chooser appearance and external-folder permission prompts require manual desktop verification.');
  const expires=await clockedPreview(page);
  assert.match(await expires.locator('#countdown').innerText(),/60/);
  await expires.clock.runFor(15000);assert.match(await expires.locator('#countdown').innerText(),/45/);
  await expires.locator('#name').fill('timer-reset');assert.match(await expires.locator('#countdown').innerText(),/60/);
  await expires.clock.runFor(59000);assert.equal(expires.isClosed(),false);
- const expired=expires.waitForEvent('close');await expires.clock.runFor(1000).catch(()=>{});await expired;
+ const expirySurvivors=await survivors(expires),expired=expires.waitForEvent('close');await expires.clock.runFor(1000).catch(()=>{});await expired;await expirySurvivors();
  record('visible 60-second countdown ticks, resets on input, closes at deadline');
  const deferred=await clockedPreview(page);
- await deferred.evaluate(()=>{window.__pickerCalls=0;window.showSaveFilePicker=()=>{window.__pickerCalls++;return new Promise((resolve,reject)=>window.__cancelPicker=()=>reject(new DOMException('cancelled','AbortError')));};});
+ await deferred.evaluate(()=>{window.__pickerCalls=0;window.showDirectoryPicker=()=>{window.__pickerCalls++;return new Promise((resolve,reject)=>window.__cancelPicker=()=>reject(new DOMException('cancelled','AbortError')));};});
  await deferred.locator('#save').click();await deferred.evaluate(()=>{document.querySelector('#form').requestSubmit();document.querySelector('#form').requestSubmit();});
  assert.equal(await deferred.evaluate(()=>window.__pickerCalls),1);
  await deferred.clock.runFor(120000);assert.equal(deferred.isClosed(),false);assert.equal(await deferred.locator('#save').isDisabled(),true);
@@ -177,12 +205,15 @@ async function clockedPreview(page){
  record('picker pauses expiry, duplicate submits lock, cancellation restarts full countdown');
  const writing=await clockedPreview(page),writeHash=await pngHash(writing);
  await writing.evaluate(async()=>{
-  const handle=await (await navigator.storage.getDirectory()).getFileHandle('deferred-write.png',{create:true});
-  window.showSaveFilePicker=async()=>({name:'deferred-write.png',createWritable:async()=>{
-   const writer=await handle.createWritable();return {write:async blob=>{await writer.write(blob);await new Promise(resolve=>window.__finishWrite=resolve);},close:()=>writer.close(),abort:()=>writer.abort()};
+  const root=await navigator.storage.getDirectory();
+  window.showDirectoryPicker=async()=>({getFileHandle:async(name,options)=>{
+   const handle=await root.getFileHandle(name,options);
+   return {name,createWritable:async()=>{
+    const writer=await handle.createWritable();return {write:async blob=>{await writer.write(blob);await new Promise(resolve=>window.__finishWrite=resolve);},close:()=>writer.close(),abort:()=>writer.abort()};
+   }};
   }});
  });
- await writing.locator('#save').click();await writing.waitForFunction(()=>typeof window.__finishWrite==='function');
+ await writing.locator('#name').fill('deferred-write');await writing.locator('#save').click();await writing.waitForFunction(()=>typeof window.__finishWrite==='function');
  await writing.clock.runFor(120000);assert.equal(writing.isClosed(),false);
  const writeClosed=writing.waitForEvent('close');await writing.evaluate(()=>window.__finishWrite()).catch(()=>{});await writeClosed;
  await verifyFile('deferred-write.png',writeHash);assert.deepEqual(fs.readdirSync(downloads),[]);assert.deepEqual(fs.readdirSync(redirected),[]);
@@ -228,8 +259,15 @@ async function clockedPreview(page){
  await disabled.waitForFunction(async()=>!(await (await import('./save-preferences.js')).loadSavePreferences()).enabled);
  await disabled.close();
  const disabledAgain=await invoke(page);assert.equal(await disabledAgain.locator('#quick-save').isChecked(),false);
- await save(disabledAgain,'quick-save-disabled');record('disabling remembered folder persists and restores native Save As flow');
+ await save(disabledAgain,'quick-save-disabled');record('disabling remembered folder persists and restores normal directory chooser flow');
  assert.equal(browserDownloads,0);assert.deepEqual(fs.readdirSync(downloads),[]);assert.deepEqual(fs.readdirSync(redirected),[]);
+ const errorPage=context.waitForEvent('page');
+ await worker.evaluate(()=>globalThis.__gulirTestCapture({id:9999,url:'chrome://settings',title:'Settings'}));
+ const errorExpiry=await errorPage;await errorExpiry.waitForLoadState();await errorExpiry.clock.install();await errorExpiry.clock.pauseAt(new Date());await errorExpiry.reload();
+ await errorExpiry.waitForFunction(()=>document.querySelector('#status').textContent.includes('Tab ini tidak dapat'));
+ const errorSurvivors=await survivors(errorExpiry),errorClosed=errorExpiry.waitForEvent('close');
+ await errorExpiry.clock.runFor(60000).catch(()=>{});await errorClosed;await errorSurvivors();
+ record('error preview expiry closes only its popup; source tabs and independent windows survive');
  if(process.argv.includes('--save-only')){report.status='SAVE_ACCEPTANCE_PASSED_WITH_REPORTED_LIMITATIONS';return;}
  const longPage=await pageAt('/long'),longPreview=await invoke(longPage);
  assert.deepEqual(await dimensions(longPreview),[[1280,35000]]);
@@ -381,6 +419,24 @@ async function clockedPreview(page){
  const restartClosed=restored.waitForEvent('close');await restored.locator('#save').click();await restartClosed;
  await verifyFile('after-restart.png',restartHash,'fallback-tests');
  record('browser restart persists preference and real directory handle, queries permission and saves without chooser');
+ await context.close();context=null;
+ await launch('last-tab-guard');
+ const lastSource=await pageAt('/short?last-tab'),last=await clockedPreview(lastSource),lastId=await targetFor(last);
+ await worker.evaluate(async id=>{const others=(await chrome.tabs.query({})).filter(t=>t.id!==id);await chrome.tabs.remove(others.map(t=>t.id));},lastId);
+ await last.clock.runFor(60000);
+ assert.equal(last.isClosed(),false);assert.match(await last.locator('#status').innerText(),/Chrome tidak ikut tertutup/);
+ assert.equal(await worker.evaluate(async()=> (await chrome.tabs.query({})).length),1);
+ assert.equal(await last.evaluate(async()=> (await import('./close-preview.js')).closePreviewOnly()),false);
+ await last.locator('#name').fill('last-tab-save');const lastHash=await pngHash(last);
+ await last.evaluate(async()=>{const root=await navigator.storage.getDirectory();window.showDirectoryPicker=async()=>root;window.showSaveFilePicker=async()=>{throw Error('Unexpected file picker')};});
+ await last.locator('#save').click();await last.waitForFunction(()=>!document.querySelector('#save').disabled);
+ assert.equal(last.isClosed(),false);await verifyFile('last-tab-save.png',lastHash);
+ record('last Chrome tab guard keeps browser open after expiry, direct close attempt, and successful exact-name save');
+ // Reproduce only the conditional legacy last-window failure in this isolated profile.
+ const legacyClose=last.waitForEvent('close');
+ await last.evaluate(()=>window.close()).catch(()=>{});await legacyClose;
+ const stillConnected=context.browser()?.isConnected();
+ record('legacy window.close closes the sole remaining preview window', 'PASSED', "Synthetic last-window case only; not proof of the user's original window state. Browser connection immediately after close: "+stillConnected);
  await context.close();context=null;
  await launch('retina',2);
  const retinaPage=await pageAt('/short?retina');

@@ -1,4 +1,4 @@
-# Gulir 1.2.5 — release candidate
+# Gulir 1.2.6 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -18,7 +18,7 @@ Gulir 1.2.0 telah diuji di Chrome MSI dan Alt+S membuka preview, tetapi capture 
 ## Pemakaian
 Buka halaman web dan tunggu muat selesai. Untuk konten lazy-load, scroll dahulu sampai bawah dan tunggu gambar muncul. Tekan Alt+S atau klik ikon Gulir. Jangan berpindah tab, menggulir, atau mengubah zoom selama pengambilan. Halaman akan terlihat bergulir, lalu posisi semula dipulihkan.
 
-Preview menampilkan “1 PNG utuh”. Ubah nama lalu klik **Simpan PNG**. Tentukan nama dan folder tujuan di dialog native, lalu Save. Chrome mengingat folder terakhir untuk dialog Gulir. Tidak ada kolom subfolder atau unduhan otomatis tambahan ke Downloads. Jika file tujuan sudah ada, periksa konfirmasi penggantian file di dialog; Mode simpan cepat memberi nomor tambahan jika nama sudah ada.
+Preview menampilkan “1 PNG utuh”. Ubah nama lalu klik **Simpan PNG**. Tentukan nama di kolom preview, lalu pilih folder tujuan pada dialog native. Chrome mengingat folder terakhir untuk dialog Gulir. Tidak ada kolom subfolder atau unduhan otomatis tambahan ke Downloads. Jika nama sudah ada, Gulir menambahkan nomor tanpa menimpa file tersebut.
 
 Countdown 60 detik terlihat, diulang saat mengedit dan ditunda selama dialog atau penulisan. Penyimpanan berhasil langsung menutup preview. Batal atau gagal memberi 60 detik baru untuk mencoba lagi. Menutup preview tidak menghapus PNG yang sudah disimpan.
 
@@ -94,4 +94,9 @@ Simpan hanya melalui dialog pilihan file; kolom folder dan jalur unduhan otomati
 - Tekan Enter atau Simpan PNG. Preview langsung ditutup setelah file selesai ditulis.
 - Countdown 60 detik terlihat dan diulang saat mengedit; berhenti sementara selama dialog/penulisan. Batal atau gagal memberi 60 detik baru. Tombol Hapus preview dihilangkan.
 - Simpan langsung ke folder terakhir adalah pilihan tersimpan, default mati. Saat pertama menyimpan dalam mode ini, pilih direktori dan beri izin. Chrome tidak memberikan folder induk dari dialog simpan file; pemilihan direktori terpisah memang diperlukan.
-- Handle direktori disimpan lokal di IndexedDB. Jika izin tidak berlaku, Chrome meminta izin/pemilihan folder lagi. Simpan cepat tidak menimpa file lama, melainkan memberi akhiran nomor. Mode dialog biasa mengikuti konfirmasi penggantian file dari Chrome.
+- Handle direktori disimpan lokal di IndexedDB. Jika izin tidak berlaku, Chrome meminta izin/pemilihan folder lagi. Simpan cepat tidak menimpa file lama, melainkan memberi akhiran nomor. Mode biasa juga memilih folder dan memakai nama dari preview, dengan akhiran nomor jika nama sudah ada.
+
+### Pengamanan penutupan 1.2.6
+Penutupan otomatis hanya menghapus ID tab preview yang telah diverifikasi. Tidak memakai window.close atau menutup jendela Chrome. Jika preview merupakan tab terakhir yang tersisa, Gulir membiarkannya terbuka agar browser tidak keluar.
+
+Nama di preview menjadi sumber nama file untuk kedua mode penyimpanan. Dialog hanya memilih direktori; tidak ada saran nama browser yang dapat mengganti nama itu. File lama selalu dilewati dengan akhiran nomor.

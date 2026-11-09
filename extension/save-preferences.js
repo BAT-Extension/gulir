@@ -1,5 +1,5 @@
 import {preferenceOp} from './db.js';
-import {saveDirect,writeFileHandle} from './save-direct.js';
+import {writeFileHandle} from './save-direct.js';
 
 const enabledKey='remember-save-folder';
 const directoryKey='save-directory-handle';
@@ -30,7 +30,6 @@ export async function saveInDirectory(blob,name,directory,locks=globalThis.navig
 
 export function createSavePreferences({
   storage=preferenceOp,
-  filePicker=(...args)=>globalThis.showSaveFilePicker(...args),
   directoryPicker=(...args)=>globalThis.showDirectoryPicker(...args),
   locks=globalThis.navigator?.locks
 }={}) {
@@ -45,7 +44,10 @@ export function createSavePreferences({
     // Call only from the user's Save/Enter action with preferences already loaded.
     async saveWithPreferences(blob,name,preferences){
       if(!preferences?.enabled){
-        const result=await saveDirect(blob,name,filePicker);
+        // Folder chooser never supplies or changes the filename. The preview name
+        // is authoritative, with the same non-overwriting suffix rule in all modes.
+        const directory=await directoryPicker({id:'gulir-save-folder',startIn:preferences?.directoryHandle||'downloads',mode:'readwrite'});
+        const result=await saveInDirectory(blob,name,directory,locks);
         return {...result,preferences};
       }
       let directory=preferences.directoryHandle;

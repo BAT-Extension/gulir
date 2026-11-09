@@ -1,3 +1,4 @@
+import {closePreviewOnly} from './close-preview.js';
 import {loadSavePreferences,setRememberFolder,saveWithPreferences} from './save-preferences.js';
 import {createCountdown} from './countdown.js';
 import {dbOp} from './db.js';
@@ -6,8 +7,9 @@ const $=id=>document.getElementById(id);
 const id=new URLSearchParams(location.search).get('id');
 let record,preferences={enabled:false},saving=false,preferencePending=false,countdown;const urls=[];
 const status=text=>{$('status').textContent=text;};
-const startCountdown=()=>{countdown?.stop();countdown=createCountdown({onTick:seconds=>{$('countdown').textContent=seconds===null?'Waktu ditunda selama penyimpanan…':'Tutup otomatis dalam '+seconds+' detik';},onExpire:()=>window.close()});};
-const describeFolder=()=>{$('folder-note').textContent=preferences.enabled?(preferences.directoryHandle?.name?'Simpan cepat ke: '+preferences.directoryHandle.name+'. Jika izin kedaluwarsa, pilih folder lagi.':'Saat menyimpan pertama kali, pilih folder dan izinkan akses. Pilihan ini disimpan di browser ini.'):'Setiap simpan membuka dialog pilihan file. Centang untuk memakai folder tersimpan tanpa dialog jika izin masih berlaku.';};
+const closePreview=async()=>{let message;try{if(await closePreviewOnly())return;message='Preview tetap terbuka agar Chrome tidak ikut tertutup. Tutup tab preview ini secara manual.';}catch{message='Preview tidak dapat ditutup otomatis. Tutup tab preview ini secara manual.';}$('countdown').textContent='Tutup otomatis dihentikan.';status(($('status').textContent?$('status').textContent+' ':'')+message);};
+const startCountdown=()=>{countdown?.stop();countdown=createCountdown({onTick:seconds=>{$('countdown').textContent=seconds===null?'Waktu ditunda selama penyimpanan…':'Tutup otomatis dalam '+seconds+' detik';},onExpire:()=>{closePreview();}});};
+const describeFolder=()=>{$('folder-note').textContent=preferences.enabled?(preferences.directoryHandle?.name?'Simpan cepat ke: '+preferences.directoryHandle.name+'. Jika izin kedaluwarsa, pilih folder lagi.':'Saat menyimpan pertama kali, pilih folder dan izinkan akses. Pilihan ini disimpan di browser ini.'):'Setiap simpan membuka pemilih folder; nama tetap mengikuti kolom di atas. Centang untuk memakai folder tersimpan tanpa dialog jika izin masih berlaku.';};
 $('shortcut').onclick=()=>chrome.tabs.create({url:'chrome://extensions/shortcuts'});
 for(const event of ['input','keydown','pointerdown'])$('form').addEventListener(event,()=>{if(!saving)countdown?.reset();});
 $('quick-save').onchange=async()=>{
@@ -16,7 +18,7 @@ $('quick-save').onchange=async()=>{
   preferences={...preferences,enabled};describeFolder();
   try{await setRememberFolder(enabled);describeFolder();}
   catch(error){preferences=previous;$('quick-save').checked=previous.enabled;describeFolder();status('Pilihan belum tersimpan. '+error.message);}
-  finally{preferencePending=false;$('save').disabled=saving||typeof showSaveFilePicker!=='function';$('quick-save').disabled=false;countdown?.resume();}
+  finally{preferencePending=false;$('save').disabled=saving||typeof showDirectoryPicker!=='function';$('quick-save').disabled=false;countdown?.resume();}
 };
 $('form').onsubmit=async event=>{
   event.preventDefault();if(saving||preferencePending||!record?.parts?.length||$('save').disabled)return;
@@ -24,9 +26,9 @@ $('form').onsubmit=async event=>{
   try{
     const name=safeName($('name').value);$('name').value=name;
     const saved=await saveWithPreferences(record.parts[0],name+'.png',preferences);
-    preferences=saved.preferences||preferences;countdown?.stop();window.close();
+    preferences=saved.preferences||preferences;status('PNG berhasil disimpan: '+saved.name+'.');countdown?.stop();await closePreview();
   }catch(error){status(error.name==='AbortError'?'Penyimpanan dibatalkan. Preview tetap tersedia.':'Simpan belum berhasil. '+error.message);}
-  finally{saving=false;$('save').disabled=typeof showSaveFilePicker!=='function';$('quick-save').disabled=false;countdown?.resume();}
+  finally{saving=false;$('save').disabled=typeof showDirectoryPicker!=='function';$('quick-save').disabled=false;countdown?.resume();}
 };
 async function init() {
   if(!id)throw Error('Penyimpanan preview gagal. Periksa ruang disk lalu coba ulang.');
@@ -45,7 +47,7 @@ async function init() {
   record.parts.forEach((blob,i)=>{const url=URL.createObjectURL(blob);urls.push(url);const f=document.createElement('figure');const cap=document.createElement('figcaption');cap.textContent='Seluruh halaman';const img=new Image();img.src=url;img.alt='Screenshot seluruh halaman';f.append(cap,img);$('images').append(f);});
   const commands=await chrome.commands.getAll();const key=commands.find(x=>x.name==='_execute_action')?.shortcut;
   $('keys').textContent=key?'Shortcut aktif: '+key:'Alt+S belum terpasang (mungkin bentrok). Klik Atur shortcut untuk memilih tombol.';
-  $('save').disabled=typeof showSaveFilePicker!=='function';
+  $('save').disabled=typeof showDirectoryPicker!=='function';
   startCountdown();
   $('name').focus();$('name').select();
   if($('save').disabled)status('Dialog simpan tidak tersedia di browser ini. Buka preview di Chrome desktop yang mendukung pemilihan file.');

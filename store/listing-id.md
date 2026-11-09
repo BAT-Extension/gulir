@@ -10,7 +10,7 @@ Ambil screenshot halaman panjang dengan Alt+S atau satu klik ikon Gulir. Hasil d
 
 - Preview sebelum menyimpan.
 - Nama otomatis yang bisa diubah.
-- Pilih nama dan folder tujuan lewat dialog simpan native, tanpa unduhan tambahan.
+- Ubah nama di preview dan pilih folder lewat dialog native, tanpa unduhan tambahan.
 - Countdown 60 detik terlihat; mengedit mengulang waktu, penyimpanan aktif menunda waktu, simpan berhasil menutup preview.
 - Enter untuk simpan. Opsi folder terakhir tersimpan dan default nonaktif; izin folder dipilih pengguna.
 - Nama singkat berbasis waktu lokal, dapat diedit; simpan cepat menghindari nama yang sudah ada.

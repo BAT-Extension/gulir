@@ -28,7 +28,7 @@ test('preference defaults off, toggle persists separately from remembered direct
  const restored=await f.api.loadSavePreferences();
  assert.equal(restored.enabled,false);assert.equal(restored.directoryHandle,f.directory);
  await f.api.saveWithPreferences(new Blob(),'shot.png',restored);
- assert.equal(f.picks,1);assert.equal(f.writes.length,1);
+ assert.equal(f.picks,2);assert.equal(f.writes.length,2);
 });
 test('first quick save selects folder; later saves reuse it and suffix collisions',async()=>{
  const f=fixture();await f.api.setRememberFolder(true);
