@@ -3,7 +3,7 @@
 - [x] Logo/icon dan manifest
 - [x] Unit/regression sintetis
 - [x] Draft listing dan privacy berdasarkan perilaku nyata
-- [ ] JNE gagal tinggi panel: diagnosis dan perbaikan belum selesai
+- [x] Error geometri 1059/1044px direproduksi; ruang scrollbar klasik diperbaiki dan diuji sintetis di 1.2.1
 - [ ] Retest JNE nyata setelah perbaikan, tanpa data dikirim keluar
 - [ ] Pemilik menentukan kontak dukungan, hosting dan URL privacy policy
 - [ ] Dashboard developer/2FA/registrasi diverifikasi

@@ -217,7 +217,13 @@ export async function expandScrollableContent(options = {}) {
         set(el, 'scrollbar-gutter', 'stable');
       set(el, 'overflow-y', 'auto');
     }
-    const height = Math.ceil(target - (c.boxSizing === 'border-box' ? 0 : original.padding + original.borders));
+    // scrollHeight excludes the horizontal scrollbar, while CSS height includes
+    // its occupied space. Preserve that scrollbar (and width) but make room for
+    // it, otherwise a classic 15px bar leaves the last 15px permanently clipped.
+    const scrollbarHeight = frame ? 0 : Math.max(0,
+      (el.offsetHeight ?? el.getBoundingClientRect().height) - el.clientHeight - original.borders);
+    boundSize(Math.max(1, original.width), target + scrollbarHeight);
+    const height = Math.ceil(target + scrollbarHeight - (c.boxSizing === 'border-box' ? 0 : original.padding + original.borders));
     set(el, 'height', Math.max(1, height) + 'px');
     set(el, 'min-height', Math.max(1, height) + 'px');
     original.height = Math.max(original.height, target);

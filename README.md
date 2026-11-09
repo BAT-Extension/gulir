@@ -1,4 +1,4 @@
-# Gulir 1.2.0 — release candidate
+# Gulir 1.2.1 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -13,7 +13,7 @@ Proyek: /home/putrimak/www/extension/gulir
 4. Jika versi lama sudah dimuat, klik Reload pada kartu Gulir.
 5. Buka chrome://extensions/shortcuts. Pastikan Alt+S terpasang; pilih tombol lain bila bentrok. F10/F11 tidak didukung Commands API Chrome.
 
-Gulir 1.2.0 sudah ditemukan terpasang di Chrome MSI dan Alt+S nyata telah membuka preview. Namun capture dashboard JNE masih gagal aman karena tinggi panel; status rilis publik tetap tertahan sampai verifikasi ulang.
+Gulir 1.2.0 telah diuji di Chrome MSI dan Alt+S membuka preview, tetapi capture JNE ditolak karena tinggi panel. Versi 1.2.1 memperbaiki penyebab scrollbar yang direproduksi secara sintetis; retest JNE nyata masih diperlukan sebelum rilis publik.
 
 ## Pemakaian
 Buka halaman web dan tunggu muat selesai. Untuk konten lazy-load, scroll dahulu sampai bawah dan tunggu gambar muncul. Tekan Alt+S atau klik ikon Gulir. Jangan berpindah tab, menggulir, atau mengubah zoom selama pengambilan. Halaman akan terlihat bergulir, lalu posisi semula dipulihkan.
@@ -70,3 +70,6 @@ https://chromedevtools.github.io/devtools-protocol/tot/Page/
 
 ## Persiapan publikasi
 Lihat `store/READINESS.md`, `store/listing-id.md` dan `store/privacy-policy-draft.md`. ZIP dalam `dist/` adalah kandidat pengujian, bukan bukti persetujuan Chrome Web Store. Jangan menggunakan screenshot JNE atau data pribadi sebagai aset toko.
+
+### Perbaikan 1.2.1
+Tinggi panel kini memasukkan ruang scrollbar horizontal klasik yang terukur. Error 1059/1044px direproduksi dan diperbaiki pada fixture browser; batas clipping tetap ketat. Retest pada JNE asli masih diperlukan.
