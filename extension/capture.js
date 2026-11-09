@@ -121,7 +121,7 @@ async function captureAttempt(send, getZoom, settle = false) {
       if(!state.capturing)throw Error('Pengambilan dibatalkan sebelum selesai. Tidak ada gambar sebagian yang disimpan.');
       if(state.visibility!=='visible')throw Error('Tab tidak aktif. Pertahankan tab ini di depan selama screenshot.');
       if(frame.loaderId!==startFrame.loaderId||frame.url!==startFrame.url)throw Error('Halaman berpindah saat screenshot. Ulangi pada halaman yang stabil.');
-      if(current.width!==size.width||current.height!==size.height){const error=Error('Ukuran halaman berubah saat screenshot. Muat semua konten lalu ulangi.');error.code='PAGE_SIZE_CHANGED';throw error;}
+      if(current.width!==size.width||current.height!==size.height){const error=Error('Ukuran halaman berubah saat screenshot. Muat semua konten lalu ulangi. Kode PAGE_SIZE: '+size.width+'x'+size.height+' → '+current.width+'x'+current.height+', viewport='+state.width+'x'+state.height+', dpr='+state.dpr+', retry='+(settle?1:0)+'.');error.code='PAGE_SIZE_CHANGED';throw error;}
       if(state.dpr!==dpr||await getZoom()!==zoom||state.width!==initial.width||state.height!==initial.height)throw Error('Ukuran viewport atau zoom berubah saat screenshot. Ulangi.');
       return state;
     };

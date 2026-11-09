@@ -1,32 +1,60 @@
+import {saveDirect} from './save-direct.js';
 import {dbOp} from './db.js';
-import {safeName,folderPath} from './core.js';
+import {safeName,folderPath,downloadPathMatches} from './core.js';
 const $ = id => document.getElementById(id);
 const id = new URLSearchParams(location.search).get('id');
-let record; const urls=[]; const completed=new Set(); const pending=new Map();
+let record; const urls=[]; const completed=new Set(); const pending=new Map(); const requested=new Map(); const mismatches=new Set();
+let directSaving=false;
 const status = text => { $('status').textContent=text; };
 $('shortcut').onclick = () => chrome.tabs.create({url:'chrome://extensions/shortcuts'});
-$('discard').onclick = async () => { if(pending.size){status('Tunggu unduhan selesai sebelum menghapus preview.');return;} await dbOp('delete',id); window.close(); };
-chrome.downloads.onChanged.addListener(delta => {
-  if (!pending.has(delta.id)) return;
-  if(delta.state?.current === 'complete') { const i=pending.get(delta.id);completed.add(i);pending.delete(delta.id); }
-  if(delta.state?.current === 'interrupted') {pending.delete(delta.id);status('Unduhan terhenti. Klik Simpan untuk mencoba gambar ini.');}
-  if (!pending.size) { $('save').disabled = completed.size === record.parts.length; if($('save').disabled)status('PNG berhasil disimpan. Nama duplikat diberi nomor otomatis oleh Chrome.'); }
+$('discard').onclick = async () => { if(pending.size||directSaving){status('Tunggu unduhan selesai sebelum menghapus preview.');return;} await dbOp('delete',id); window.close(); };
+const savedStatus=()=>mismatches.size
+  ? 'Chrome menyimpan dengan nama/lokasi berbeda dari pilihan Gulir. Gunakan Pilih lokasi untuk menyimpan langsung dengan nama/folder yang Anda tentukan. File unduhan sebelumnya tidak dihapus atau diulang otomatis.'
+  : 'PNG berhasil disimpan sesuai nama dan subfolder pilihan. Nama duplikat diberi nomor otomatis oleh Chrome.';
+async function inspectDownload(downloadId) {
+  if(!pending.has(downloadId))return;
+  const i=pending.get(downloadId),[item]=await chrome.downloads.search({id:downloadId});
+  if(item?.state==='complete'){
+    if(!downloadPathMatches(item.filename,requested.get(downloadId)))mismatches.add(i);
+    completed.add(i);pending.delete(downloadId);
+  }else if(item?.state==='interrupted'){
+    pending.delete(downloadId);status('Unduhan terhenti. Klik Simpan untuk mencoba gambar ini.');
+  }
+  $('save').disabled=pending.size>0||completed.size===record.parts.length;
+  if(completed.size===record.parts.length)status(savedStatus());
+}
+chrome.downloads.onChanged.addListener(delta=>{
+  if(pending.has(delta.id)&&(delta.state||delta.filename))inspectDownload(delta.id).catch(()=>status('Status lokasi unduhan belum dapat dipastikan. Periksa Downloads sebelum mencoba lagi.'));
 });
+$('save-direct').onclick=async()=>{
+  if(directSaving||pending.size)return;
+  directSaving=true;$('save-direct').disabled=true;$('save').disabled=true;
+  try{
+    const name=safeName($('name').value)+'.png';
+    const saved=await saveDirect(record.parts[0],name);
+    status('PNG disimpan langsung: '+saved.name+'. Folder mengikuti pilihan pada dialog, bukan kolom subfolder.');
+  }catch(error){
+    status(error.name==='AbortError'?'Dialog simpan dibatalkan. Preview tetap tersedia.':'Simpan langsung belum berhasil. '+error.message);
+  }finally{
+    directSaving=false;$('save-direct').disabled=false;
+    $('save').disabled=pending.size>0||completed.size===record.parts.length;
+  }
+};
 $('form').onsubmit = async e => {
-  e.preventDefault(); $('save').disabled=true;
+  e.preventDefault(); if(directSaving)return; $('save').disabled=true;
   try {
     const folder=folderPath($('folder').value);const name=safeName($('name').value);$('name').value=name;
     await chrome.storage.local.set({folder});
     for(let i=0;i<record.parts.length;i++) {
       if(completed.has(i)||[...pending.values()].includes(i))continue;
       const suffix=record.parts.length>1 ? '-'+String(i+1).padStart(2,'0') : '';
-      const downloadId=await chrome.downloads.download({url:urls[i],filename:(folder?folder+'/':'')+name+suffix+'.png',conflictAction:'uniquify',saveAs:false});
-      pending.set(downloadId,i);
-      const [item]=await chrome.downloads.search({id:downloadId});
-      if(item?.state==='complete'){completed.add(i);pending.delete(downloadId);}
-      if(item?.state==='interrupted'){pending.delete(downloadId);throw Error('Unduhan terhenti. Coba simpan lagi.');}
+      const filename=(folder?folder+'/':'')+name+suffix+'.png';
+      const downloadId=await chrome.downloads.download({url:urls[i],filename,conflictAction:'uniquify',saveAs:false});
+      requested.set(downloadId,filename);pending.set(downloadId,i);
+      await inspectDownload(downloadId);
     }
-    status(completed.size===record.parts.length?'PNG berhasil disimpan.':'Mengunduh… Jangan tutup preview sampai selesai.');
+    if(completed.size===record.parts.length)status(savedStatus());
+    else if(pending.size)status('Mengunduh… Jangan tutup preview sampai selesai.');
   } catch(e) { status(e.message); }
   finally { $('save').disabled = pending.size>0 || completed.size===record.parts.length; }
 };
@@ -46,6 +74,7 @@ async function init() {
   const commands=await chrome.commands.getAll();const key=commands.find(x=>x.name==='_execute_action')?.shortcut;
   $('keys').textContent=key?'Shortcut aktif: '+key:'Alt+S belum terpasang (mungkin bentrok). Klik Atur shortcut untuk memilih tombol.';
   $('save').disabled=false;
+  $('save-direct').disabled=typeof showSaveFilePicker!=='function';
 }
 init().catch(e=>{$('summary').textContent='Belum ada screenshot.';status(e.message);});
 window.addEventListener('unload',()=>urls.forEach(URL.revokeObjectURL));

@@ -7,7 +7,7 @@ const extension=path.join(work,'extension');
 fs.cpSync(path.join(root,'extension'),extension,{recursive:true});
 fs.appendFileSync(path.join(extension,'background.js'),'\nglobalThis.__gulirTestCapture=capture;\n');
 (async()=>{
- const context=await chromium.launchPersistentContext(path.join(work,'profile'),{executablePath:process.env.GULIR_CHROMIUM_EXECUTABLE||chromium.executablePath(),headless:true,viewport:null,args:['--window-size=1280,720','--disable-extensions-except='+extension,'--load-extension='+extension]});
+ const context=await chromium.launchPersistentContext(path.join(work,'profile'),{executablePath:process.env.GULIR_CHROMIUM_EXECUTABLE||chromium.executablePath(),headless:true,viewport:null,args:['--force-device-scale-factor='+(process.env.GULIR_TEST_DPR||'1'),'--window-size='+(process.env.GULIR_TEST_WINDOW_SIZE||'1280,720'),'--disable-extensions-except='+extension,'--load-extension='+extension]});
  try{
   const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
   const page=await context.newPage();await page.goto('https://bitwarden.com/',{waitUntil:'domcontentloaded',timeout:45000});await page.waitForTimeout(1500);await page.bringToFront();

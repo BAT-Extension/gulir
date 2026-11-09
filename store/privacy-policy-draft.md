@@ -13,3 +13,5 @@ Tidak ada akun Gulir atau penjualan/transfer screenshot oleh Gulir kepada pihak 
 Izin debugger memberi akses kuat pada tab untuk fungsi screenshot; sambungan dilepas setelah proses, termasuk saat error. Izin downloads dipakai menyimpan dan mengecek status; storage untuk preferensi; activeTab untuk tab yang dipilih melalui tindakan pengguna.
 
 Pertanyaan privasi: [pemilik harus menambahkan kontak dukungan].
+
+Pilihan Pilih lokasi membuka dialog File System Access browser hanya setelah klik pengguna. Gulir menulis PNG ke file yang dipilih pengguna. Handle file tidak disimpan oleh Gulir; browser dapat mengingat direktori terakhir untuk dialog. Jalur ini tidak memakai API downloads dan tidak mengunggah file.

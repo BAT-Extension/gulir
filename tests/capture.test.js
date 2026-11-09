@@ -16,7 +16,7 @@ function style(initial={}){
  return {getPropertyValue:k=>values.get(k)?.value||'',getPropertyPriority:k=>values.get(k)?.priority||'',setProperty:(k,v,p)=>values.set(k,{value:v,priority:p}),removeProperty:k=>values.delete(k),values};
 }
 function fixture(mode='success'){
- let shots=0,restored=false,closed=0,attempts=0;const draw=[];
+ let shots=0,restored=false,closed=0,attempts=0,measurements=0;const draw=[];
  const html={style:style({'scroll-behavior':'smooth'}),clientWidth:400,clientHeight:300};
  const fixed={style:style({visibility:'visible',opacity:'0.8'}),parentElement:null,getRootNode:()=>({}),kind:'fixed'};
  const sticky={style:style({top:'10px'}),kind:'sticky'};
@@ -37,7 +37,7 @@ function fixture(mode='success'){
  const send=async(method,params)=>{
   if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'frame',loaderId:mode==='navigation'&&shots?'new':'initial',url:'https://example.org'}}};
   if(method==='Page.createIsolatedWorld'){attempts++;return {executionContextId:7};}
-  if(method==='Page.getLayoutMetrics')return {cssContentSize:{width:903,height:['resize','resize-once'].includes(mode)&&shots?1300:1207}};
+  if(method==='Page.getLayoutMetrics')return {cssContentSize:{width:903,height:mode==='unstable-resize'?1207+measurements++:['resize','resize-once'].includes(mode)&&shots?1300:1207}};
   if(method==='Runtime.evaluate'){
    try{const value=await vm.runInContext(params.expression,context);if(!context.__gulirCapture)restored=true;return {result:{value}};}
    catch(e){return {exceptionDetails:{text:e.message}};}
@@ -54,13 +54,14 @@ function fixture(mode='success'){
  };
  return {send,zoom:async()=>1.25,state:()=>({shots,restored,closed,draw,context,html,fixed,sticky,attempts})};
 }
-for(const mode of ['success','resize-once','capture-fail','decode-fail','encode-fail','navigation','resize','scroll-change','zoom-change','pagehide','inactive']){
+for(const mode of ['success','resize-once','unstable-resize','capture-fail','decode-fail','encode-fail','navigation','resize','scroll-change','zoom-change','pagehide','inactive']){
  test('viewport pipeline preserves state and never oversized-captures: '+mode,async()=>{
   const f=fixture(mode);
   if(mode==='success'||mode==='resize-once'){
    const result=await captureSinglePng(f.send,f.zoom);
    assert.equal(result.height,mode==='resize-once'?1300:1207);assert.equal(result.width,903);assert.ok(result.blob instanceof Blob);
-  }else await assert.rejects(captureSinglePng(f.send,f.zoom));
+  }else if(mode==='unstable-resize')await assert.rejects(captureSinglePng(f.send,f.zoom),/Kode PAGE_SIZE: 903x[0-9]+ → 903x[0-9]+, viewport=400x300, dpr=1.25, retry=1/);
+  else await assert.rejects(captureSinglePng(f.send,f.zoom));
   const s=f.state();assert.equal(s.restored,true);assert.ok(s.attempts<=2);if(mode==='resize-once')assert.equal(s.attempts,2);
   assert.equal(s.context.scrollX,31);assert.equal(s.context.scrollY,41);
   assert.equal(s.html.style.getPropertyValue('scroll-behavior'),'smooth');

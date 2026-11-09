@@ -1,4 +1,4 @@
-# Gulir 1.2.2 — release candidate
+# Gulir 1.2.3 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -76,3 +76,12 @@ Tinggi panel kini memasukkan ruang scrollbar horizontal klasik yang terukur. Err
 
 ### Perbaikan 1.2.2
 Jika ukuran halaman berubah, Gulir membuang seluruh hasil sementara, menyiapkan lazy-load dengan batas 20 detik dan maksimal 3 sapuan / 240 langkah, lalu mengulang gambar utuh satu kali. Header sticky yang mengecil dipertahankan ruang asalnya selama capture. Halaman yang terus berubah tetap ditolak, bukan dipotong. Persiapan dapat memicu lazy-load/JavaScript scroll milik situs. Tidak melakukan klik, login atau navigasi otomatis ke halaman lain.
+
+### Diagnostik 1.2.3
+Bila ukuran masih berubah setelah satu retry, error PAGE_SIZE hanya mencantumkan dimensi sebelum/sesudah, ukuran viewport, DPR dan nomor retry. Tidak memuat URL atau isi halaman. Versi ini membantu diagnosis perbedaan laptop; bukan klaim bahwa semua kasus dinamis sudah diperbaiki.
+
+### Verifikasi lokasi unduhan
+Gunakan tombol Simpan PNG di preview, bukan Save image as dari menu gambar. Gulir memeriksa nama/subfolder final yang dilaporkan Chrome. Jika browser atau extension lain mengganti routing menjadi nama UUID, Gulir memperingatkan perbedaan dan tidak mengunduh ulang otomatis. Ini bukan jaminan dapat mengesampingkan kebijakan browser.
+
+### Simpan langsung jika nama/lokasi unduhan diubah browser
+Klik Pilih lokasi… pada preview. Nama dari kolom Nama file menjadi saran di dialog native. Pilih folder tujuan di dialog lalu Save; Chrome mengingat folder terakhir untuk dialog Gulir. Jalur ini menulis PNG langsung ke file pilihan, bukan melalui API unduhan. Kolom Subfolder di Downloads hanya berlaku untuk tombol Simpan PNG. Membatalkan dialog tidak menghapus preview. File UUID yang telanjur tersimpan tidak dihapus otomatis.

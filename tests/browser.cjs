@@ -131,6 +131,30 @@ async function save(preview,name,folder){
  assert.equal(duplicate,path.join(downloads,'Screenshots','Test','test-shot (1).png'));
  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(filename)).digest('hex'),original);
  record('repeat capture detaches debugger; duplicate download preserves original');await repeated.close();
+ const interceptedPage=await pageAt('/short'),intercepted=await invoke(interceptedPage);
+ const routing=await context.newCDPSession(intercepted);
+ const redirected=path.join(work,'routed-downloads');fs.mkdirSync(redirected);
+ await routing.send('Browser.setDownloadBehavior',{behavior:'allowAndName',downloadPath:redirected,eventsEnabled:true});
+ await intercepted.locator('#name').fill('expected-name');await intercepted.locator('#folder').fill('Screenshots/Expected');await intercepted.locator('#save').click();
+ await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.includes('nama/lokasi berbeda'));
+ const [routed]=await intercepted.evaluate(()=>chrome.downloads.search({orderBy:['-startTime'],limit:1}));
+ assert.equal(routed.state,'complete');assert.equal(path.dirname(routed.filename),redirected);assert.notEqual(path.basename(routed.filename),'expected-name.png');
+ assert.equal(await intercepted.locator('#save').isDisabled(),true);
+ await routing.send('Browser.setDownloadBehavior',{behavior:'default',eventsEnabled:true});await routing.detach();
+ record('browser UUID routing override is detected, no false success or automatic duplicate retry');
+ assert.equal(await intercepted.evaluate(()=>typeof showSaveFilePicker),'function');
+ await intercepted.evaluate(async()=>{
+   const root=await navigator.storage.getDirectory();const handle=await root.getFileHandle('direct-chosen.png',{create:true});
+   window.__directTestHandle=handle;window.__pickerCalls=0;
+   window.showSaveFilePicker=async options=>{window.__pickerCalls++;window.__pickerOptions=options;return handle};
+ });
+ await intercepted.locator('#save-direct').click();await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.startsWith('PNG disimpan langsung'));
+ const direct=await intercepted.evaluate(async()=>{const file=await __directTestHandle.getFile();return {bytes:file.size,header:[...new Uint8Array(await file.slice(0,8).arrayBuffer())],calls:__pickerCalls,suggested:__pickerOptions.suggestedName}});
+ assert.deepEqual(direct.header,[137,80,78,71,13,10,26,10]);assert.ok(direct.bytes>1000);assert.equal(direct.calls,1);assert.equal(direct.suggested,'expected-name.png');
+ await intercepted.evaluate(()=>{window.showSaveFilePicker=async()=>{throw new DOMException('cancelled','AbortError')}});
+ await intercepted.locator('#save-direct').click();await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.includes('dibatalkan'));
+ assert.equal(await intercepted.locator('#save-direct').isDisabled(),false);
+ record('direct save writes exact PNG through FileSystemWritableFileStream; picker cancellation preserves preview (chooser mocked)');await intercepted.close();
  const longPage=await pageAt('/long'),longPreview=await invoke(longPage);
  assert.deepEqual(await dimensions(longPreview),[[1280,35000]]);
  const samples=await longPreview.locator('#images img').evaluate(img=>{
