@@ -3,6 +3,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
+    "test:browser:close": "node tests/close-preview.browser.cjs",
     "test:browser": "node tests/browser.cjs",
     "test:browser:nested": "node tests/browser.cjs --nested",
     "test:browser:scrollbar": "node tests/scrollbar.browser.cjs",

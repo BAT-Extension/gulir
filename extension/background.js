@@ -1,3 +1,4 @@
+import {CLOSE_PREVIEW,createPreviewCloser} from './close-preview.js';
 import {allowedUrl,autoName} from './core.js';
 import {captureSinglePng} from './capture.js';
 import {dbOp,prune} from './db.js';
@@ -33,3 +34,10 @@ export async function capture(tab) {
 }
 chrome.action.onClicked.addListener(tab => { capture(tab).catch(console.error); });
 chrome.runtime.onStartup.addListener(()=>{prune().catch(console.error);});
+
+const closePreview = createPreviewCloser(chrome);
+chrome.runtime.onMessage.addListener((message,sender,respond) => {
+  if (message?.type !== CLOSE_PREVIEW) return;
+  closePreview(sender).then(closed => respond({closed}),() => respond({closed:false}));
+  return true;
+});

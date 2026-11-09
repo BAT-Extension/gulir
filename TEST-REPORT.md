@@ -1,4 +1,32 @@
-# Gulir 1.2.7 safety hotfix
+# Gulir 1.2.8 preview-only close verification
+
+## Current result
+- Restored close after committed save and after the idle countdown. The 1.2.7 no-close behavior was intentional and is the confirmed cause of the latest report.
+- Background serializes close requests and authenticates the Chrome-provided sender, tab ID, and live document identity. No target ID comes from the message body. Navigation cancels closure. No window.close or windows.remove API exists in runtime.
+- A normal non-preview tab must remain. Otherwise a verified normal New Tab window is created first, then only the requesting preview tab is removed. Another popup or expiring preview cannot count as the survivor.
+- The former guard counted other previews as survivors and had no shared queue. Those are identifiable safety gaps, not proof of the cause of the user's earlier whole-Chrome incident.
+- No new permissions, personal profiles, or user tabs were used. Visible version: GULIR 1.2.8.
+
+## Final verification
+- Unit suite: 86 passed. Source guard permits only the single authenticated tab-removal site and bans all window/browser close APIs.
+- Full headless Chromium capture/save/nested suite: 37 passed; native Alt+S was not verified. Report: /tmp/gulir-browser-T0ativ/report.json on MSI WSL.
+- Separate graphical Chromium suite using unmodified runtime plus a disposable fixture page: 7 passed. Report: /tmp/gulir-close-Qn3Ae8/report.json.
+- Both graphical and full runs verify save/countdown closure while multiple independent normal windows and original tab IDs survive unchanged. Also tested preview inside a normal window, sole-preview save and expiry, simultaneous final previews, and non-preview caller rejection.
+- Last-window checks continue by navigating the surviving normal tab to a test page, proving browser usability after closing the preview, not merely a momentary automation connection.
+- Full suite retains exact PNG hash checks, generated/edited names, collision preservation, quick-save preferences across restart, cancellation/write failures, paused countdown, and zero download events.
+- Preview screenshot inspected visually: version, countdown, save controls and last-window behavior note visible. Screenshot: /tmp/gulir-close-Qn3Ae8/preview-1.2.8.png.
+
+## Limits and upgrade
+- Native folder picker is mocked; writes use actual OPFS file handles. This does not automate OS chooser appearance or external-directory permission prompts.
+- Tests use isolated Chromium on MSI WSL, including a graphical browser run, not the user's personal Windows Chrome profile. The earlier whole-Chrome exit remains unreproduced and its exact cause unproven.
+- The safeguard cannot prevent Chrome crashes or a user/another application independently closing the surviving window during an API operation.
+- Close older previews manually, reload Gulir in chrome://extensions, and confirm GULIR 1.2.8 on a newly created preview. Reloading does not rewrite already loaded preview scripts.
+- No deployment or Chrome Web Store submission was performed.
+
+## Historical evidence below
+All closing behavior below describes older versions and is superseded by the results above.
+
+# Historical 1.2.7 safety hotfix (superseded)
 
 ## Current result
 - User reported 1.2.6 still closed Chrome. Exact whole-browser incident has NOT been reproduced; do not claim its root cause is known.

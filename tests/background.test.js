@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import * as core from '../extension/core.js';
 const source=(await fs.readFile(new URL('../extension/background.js',import.meta.url),'utf8'))
+ .replace("import {CLOSE_PREVIEW,createPreviewCloser} from './close-preview.js';","const CLOSE_PREVIEW='test';const createPreviewCloser=()=>async()=>false;")
  .replace("import {allowedUrl,autoName} from './core.js';",'const {allowedUrl,autoName}=globalThis.testCore;')
  .replace("import {captureSinglePng} from './capture.js';",'const {captureSinglePng}=globalThis.testCapture;')
  .replace("import {dbOp,prune} from './db.js';",'const {dbOp,prune}=globalThis.testDb;');
@@ -13,7 +14,7 @@ globalThis.testDb={prune:async()=>{},dbOp:async(m,r)=>records.push(r)};
 globalThis.chrome={
  tabs:{getZoom:async()=>1},
  action:{setBadgeText:async()=>{},onClicked:{addListener(){}}},
- runtime:{getURL:s=>'chrome-extension://test/'+s,onStartup:{addListener(){}}},
+ runtime:{getURL:s=>'chrome-extension://test/'+s,onStartup:{addListener(){}},onMessage:{addListener(){}}},
  windows:{create:async()=>calls.push('preview')},
  debugger:{attach:async()=>{calls.push('attach');if(mode==='denied')throw Error('Access denied');},detach:async()=>calls.push('detach'),sendCommand:async()=>{}}
 };

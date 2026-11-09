@@ -1,3 +1,4 @@
+import {CLOSE_PREVIEW} from './close-preview.js';
 import {loadSavePreferences,setRememberFolder,saveWithPreferences} from './save-preferences.js';
 import {createCountdown} from './countdown.js';
 import {dbOp} from './db.js';
@@ -6,8 +7,8 @@ const $=id=>document.getElementById(id);
 const id=new URLSearchParams(location.search).get('id');
 let record,preferences={enabled:false},saving=false,preferencePending=false,countdown;const urls=[];
 const status=text=>{$('status').textContent=text;};
-const keepPreviewOpen=()=>{$('countdown').textContent='Penutupan otomatis dinonaktifkan.';};
-const startCountdown=()=>{countdown?.stop();countdown=createCountdown({onTick:seconds=>{$('countdown').textContent=seconds===null?'Waktu ditunda selama penyimpanan...':'Pengingat dalam '+seconds+' detik (preview tetap terbuka)';},onExpire:keepPreviewOpen});};
+const closePreview=async()=>{try{const result=await chrome.runtime.sendMessage({type:CLOSE_PREVIEW});if(result?.closed)return;}catch{}$('countdown').textContent='Preview tidak dapat ditutup otomatis. Tutup melalui X Chrome.';};
+const startCountdown=()=>{countdown?.stop();countdown=createCountdown({onTick:seconds=>{$('countdown').textContent=seconds===null?'Waktu ditunda selama penyimpanan...':'Tutup otomatis dalam '+seconds+' detik';},onExpire:closePreview});};
 const describeFolder=()=>{$('folder-note').textContent=preferences.enabled?(preferences.directoryHandle?.name?'Simpan cepat ke: '+preferences.directoryHandle.name+'. Jika izin kedaluwarsa, pilih folder lagi.':'Saat menyimpan pertama kali, pilih folder dan izinkan akses. Pilihan ini disimpan di browser ini.'):'Setiap simpan membuka pemilih folder; nama tetap mengikuti kolom di atas. Centang untuk memakai folder tersimpan tanpa dialog jika izin masih berlaku.';};
 $('shortcut').onclick=()=>chrome.tabs.create({url:'chrome://extensions/shortcuts'});
 for(const event of ['input','keydown','pointerdown'])$('form').addEventListener(event,()=>{if(!saving)countdown?.reset();});
@@ -25,7 +26,7 @@ $('form').onsubmit=async event=>{
   try{
     const name=safeName($('name').value);$('name').value=name;
     const saved=await saveWithPreferences(record.parts[0],name+'.png',preferences);
-    preferences=saved.preferences||preferences;status('PNG berhasil disimpan: '+saved.name+'.');countdown?.stop();keepPreviewOpen();
+    preferences=saved.preferences||preferences;status('PNG berhasil disimpan: '+saved.name+'.');countdown?.stop();await closePreview();
   }catch(error){status(error.name==='AbortError'?'Penyimpanan dibatalkan. Preview tetap tersedia.':'Simpan belum berhasil. '+error.message);}
   finally{saving=false;$('save').disabled=typeof showDirectoryPicker!=='function';$('quick-save').disabled=false;countdown?.resume();}
 };

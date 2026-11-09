@@ -1,4 +1,4 @@
-# Gulir 1.2.7 — release candidate
+# Gulir 1.2.8 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -20,7 +20,7 @@ Buka halaman web dan tunggu muat selesai. Untuk konten lazy-load, scroll dahulu 
 
 Preview menampilkan “1 PNG utuh”. Ubah nama lalu klik **Simpan PNG**. Tentukan nama di kolom preview, lalu pilih folder tujuan pada dialog native. Chrome mengingat folder terakhir untuk dialog Gulir. Tidak ada kolom subfolder atau unduhan otomatis tambahan ke Downloads. Jika nama sudah ada, Gulir menambahkan nomor tanpa menimpa file tersebut.
 
-Hotfix keamanan 1.2.7: penutupan otomatis dinonaktifkan sepenuhnya. Setelah simpan atau countdown selesai, semua tab/jendela tetap terbuka. Tutup preview melalui X bawaan Chrome. PNG yang sudah disimpan tidak dihapus.
+Preview ditutup otomatis setelah file selesai disimpan atau 60 detik tanpa aktivitas. Mengedit nama mengulang countdown; pemilihan folder dan penulisan file menundanya. Hanya tab preview yang ditutup. Jika tidak ada tab biasa selain preview, Gulir membuka jendela normal berisi Tab Baru terlebih dahulu agar Chrome tetap berjalan. Bila pemeriksaan keamanan atau pembuatan Tab Baru gagal, preview tetap terbuka dengan petunjuk menutup manual. PNG yang sudah disimpan tidak dihapus.
 
 Satu capture menghasilkan satu file, tanpa akhiran bagian -01/-02. Penyimpanan menulis PNG langsung ke file pilihan, bukan melalui API Downloads. Jika dialog tidak tersedia atau penulisan gagal, tidak ada fallback unduhan otomatis. File UUID yang telanjur tersimpan dari versi lama tidak dihapus.
 
@@ -60,6 +60,7 @@ Screenshot sementara disimpan pada IndexedDB lokal extension. Capture lebih dari
 - GULIR_STRESS=1 menambahkan canvas 20MP.
 - GULIR_CHROMIUM_EXECUTABLE memilih executable Chrome lain.
 - GULIR_HEADED=1 membuka jendela browser uji terlihat.
+- npm run test:browser:close menguji simpan/countdown, beberapa jendela, preview dalam tab biasa, preview terakhir, dan expiry bersamaan. Jalankan dengan GULIR_HEADED=1 untuk pengujian jendela grafis terisolasi.
 
 Fixture memakai salinan extension/profil sementara dan loopback server. Test hook tidak masuk extension asli. Lihat TEST-REPORT.md untuk hasil dan batas validasi. Keberhasilan ukuran saja tidak membuktikan isi; pengujian memeriksa piksel asli.
 
@@ -103,3 +104,10 @@ Nama di preview menjadi sumber nama file untuk kedua mode penyimpanan. Dialog ha
 
 ### Hotfix keamanan 1.2.7
 Laporan pengguna bahwa Chrome masih ikut tertutup membuat jaminan 1.2.6 tidak memadai. Seluruh penutupan tab/jendela oleh kode Gulir kini dinonaktifkan, bukan sekadar menambahkan pemeriksaan ID. Countdown hanya pengingat; simpan tidak menutup preview. Catatan penutupan versi sebelumnya di atas adalah riwayat, bukan perilaku 1.2.7. Penyebab persis insiden pengguna belum direproduksi.
+
+### Penutupan preview 1.2.8
+- Penutupan setelah simpan dan countdown diaktifkan kembali. Versi 1.2.7 memang tidak pernah menutup preview, sehingga perilaku yang dilaporkan bukan kegagalan timer.
+- Permintaan diproses satu per satu di background. Target selalu ID tab pengirim yang diberikan Chrome, bukan ID dari isi pesan. Identitas dokumen preview aktif diperiksa sebelum penutupan; tab yang sudah bernavigasi tidak ditutup.
+- Preview lain atau popup bukan jaminan browser tetap terbuka. Jika tidak ada tab biasa, Gulir membuat dan memverifikasi jendela normal dengan Tab Baru sebelum menutup preview. Tidak ada pemanggilan window.close atau windows.remove.
+- Uji Chromium terisolasi mencakup beberapa jendela normal, satu preview terakhir, dua preview yang kedaluwarsa bersamaan, dan keberlanjutan penggunaan browser setelah penutupan. Insiden Chrome pengguna sebelumnya belum direproduksi secara persis; ini bukan klaim bahwa penyebab insiden tersebut sudah diketahui.
+- Tutup preview versi lama secara manual, klik Reload pada kartu Gulir di chrome://extensions, lalu ambil screenshot baru dan pastikan label GULIR 1.2.8.
