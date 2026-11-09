@@ -1,6 +1,6 @@
-# Gulir 1.2.3 — validasi dan gate publikasi
+# Gulir 1.2.4 — validasi dan gate publikasi
 
-## Lulus
+## Riwayat pengujian versi sebelumnya
 - 53 unit tests (run terbaru pada MSI).
 - Browser suite setelah integrasi logo: capture nyata debugger, preview, filename/folder, duplicate-safe download, scrolling/restoration,35.000px satu PNG, zoom/DPR, folder persistence.
 - Nested suite: fixed app shell, nested panels, body scroller, same-origin iframe, clipped ancestor, initial scroll offsets; horizontal unsupported fails safely; cross-origin warning.
@@ -43,3 +43,17 @@ Native default Chrome downloads preserve chosen filename, nested subfolder and d
 
 ## Direct save fallback
 Added native Save File Picker path independent of download routing, with suggested name from form and explicit user-selected directory.58unit tests pass including exact blob write, cancellation and failed-writer abort. Browser chooser is mocked for automation; writable stream uses real isolated origin storage. Manual OS chooser verification still needed on user laptop.
+
+## 1.2.4 scrolled-header regression (2026-11-09)
+- Reproduced the real public Bitwarden failure from scrollY=1200 with classic scrollbars:1905x8866 to1905x8846, retry1. The user reported11px rather than this20px; exact content heights differ by environment.
+- Synthetic sticky animated header reproduces exactly 11px shrink on the old code (3350 to3339). Fix scrolls to top, lets scroll handlers run, then disables sticky transition before measuring its full footprint. No size tolerance was relaxed.
+- Fixed public capture at exactly 1920x907 viewport, DPR1 yields one1905x8866PNG; original scroll/URL restored. Visually reviewed full image through final footer. Evidence: gulir-public-3VvoxW/report.json.
+- Synthetic regression verifies 3350px image and bottom green pixel plus original scroll restoration; tests/scrolled-header.browser.cjs.
+- All 58 unit tests and four classic15px scrollbar variants passed. Unbounded growth and actual clipping continue to reject without partial PNG.
+
+### 1.2.4 integrated save and expiry checks
+- Final public Bitwarden evidence: gulir-public-04QOeu/report.json, capture viewport 1920x907, DPR1, PNG1905x8866, original scroll restored.
+- Full+nested browser suite: 31 passed, 1 shortcut simulation unverified. Evidence: gulir-browser-FuE3yc/report.json.
+- Save/expiry suite: 11 passed. Evidence: gulir-browser-waR7xw/report.json. Exact saved PNG hash matches preview; zero Chrome download events/files even with UUID routing enabled. Cancel, repeated submits, write failure/retry and expiry during pending picker/write verified.
+- OS chooser is mocked with real OPFS file handles; native overwrite dialog not automated. 60-second timer uses controlled test clock. Source of user's original extra UUID file not proven; automatic download path and downloads/storage permissions removed entirely.
+- Latest full-page JNE retest and Chrome Web Store publication remain pending; no user HR data accessed.

@@ -1,14 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Gulir",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "minimum_chrome_version": "118",
   "description": "Screenshot satu PNG utuh, termasuk panel gulir vertikal yang didukung, preview, rename, dan simpan.",
   "permissions": [
     "activeTab",
-    "debugger",
-    "downloads",
-    "storage"
+    "debugger"
   ],
   "background": {
     "service_worker": "background.js",

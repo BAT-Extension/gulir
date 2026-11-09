@@ -7,11 +7,15 @@ const extension=path.join(work,'extension');
 fs.cpSync(path.join(root,'extension'),extension,{recursive:true});
 fs.appendFileSync(path.join(extension,'background.js'),'\nglobalThis.__gulirTestCapture=capture;\n');
 (async()=>{
- const context=await chromium.launchPersistentContext(path.join(work,'profile'),{executablePath:process.env.GULIR_CHROMIUM_EXECUTABLE||chromium.executablePath(),headless:true,viewport:null,args:['--force-device-scale-factor='+(process.env.GULIR_TEST_DPR||'1'),'--window-size='+(process.env.GULIR_TEST_WINDOW_SIZE||'1280,720'),'--disable-extensions-except='+extension,'--load-extension='+extension]});
+ const context=await chromium.launchPersistentContext(path.join(work,'profile'),{executablePath:process.env.GULIR_CHROMIUM_EXECUTABLE||chromium.executablePath(),headless:true,ignoreDefaultArgs:process.env.GULIR_CLASSIC_SCROLLBARS?['--hide-scrollbars']:[],viewport:null,args:['--force-device-scale-factor='+(process.env.GULIR_TEST_DPR||'1'),'--window-size='+(process.env.GULIR_TEST_WINDOW_SIZE||'1280,720'),'--disable-extensions-except='+extension,'--load-extension='+extension]});
  try{
   const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
   const page=await context.newPage();await page.goto('https://bitwarden.com/',{waitUntil:'domcontentloaded',timeout:45000});await page.waitForTimeout(1500);await page.bringToFront();
+  if(process.env.GULIR_TEST_START_SCROLL){await page.evaluate(y=>scrollTo(0,y),Number(process.env.GULIR_TEST_START_SCROLL));await page.waitForTimeout(1000);}
   const before=await page.evaluate(()=>({url:location.href,x:scrollX,y:scrollY}));
+  let capturedViewport;
+  await page.exposeFunction('__reportViewport',value=>{capturedViewport=value});
+  await page.evaluate(()=>{addEventListener('scroll',()=>globalThis.__reportViewport({width:innerWidth,height:innerHeight,dpr:devicePixelRatio}));});
   const next=context.waitForEvent('page',{timeout:180000}).catch(error=>({error}));
   await worker.evaluate(async()=>{const target=(await chrome.debugger.getTargets()).find(t=>t.type==='page'&&t.url==='https://bitwarden.com/'&&t.tabId);if(!target)throw Error('Unexpected public test tab');const tab=await chrome.tabs.get(target.tabId);await chrome.windows.update(tab.windowId,{focused:true});await chrome.tabs.update(tab.id,{active:true});await globalThis.__gulirTestCapture({...tab,url:target.url,status:'complete'});});
   const preview=await next;if(preview.error)throw preview.error;await preview.waitForLoadState();await preview.waitForFunction(()=>!document.querySelector('#save').disabled||document.querySelector('#status').textContent.trim());
@@ -21,7 +25,7 @@ fs.appendFileSync(path.join(extension,'background.js'),'\nglobalThis.__gulirTest
   fs.writeFileSync(path.join(work,'bitwarden-public.png'),Buffer.from(data.bytes));
   await preview.screenshot({path:path.join(work,'preview.png')});
   assert.deepEqual(await page.evaluate(()=>({url:location.href,x:scrollX,y:scrollY})),before);
-  const report={status:'PUBLIC_BITWARDEN_CAPTURE_PASS',width:data.width,height:data.height,restored:true,login:false,form_submitted:false,artifactDirectory:work};
+  const report={status:'PUBLIC_BITWARDEN_CAPTURE_PASS',width:data.width,height:data.height,restored:true,capturedViewport,login:false,form_submitted:false,artifactDirectory:work};
   fs.writeFileSync(path.join(work,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
  }finally{await context.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

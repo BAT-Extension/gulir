@@ -3,15 +3,16 @@
 Nama: Gulir
 Kategori usulan: Tools
 Bahasa utama: Indonesia
-Ringkasan: Screenshot halaman web menjadi satu PNG, dengan preview, nama otomatis, dan subfolder Downloads yang diingat.
+Ringkasan: Screenshot halaman web menjadi satu PNG, dengan preview, nama otomatis, dan dialog pemilihan lokasi simpan.
 
 ## Deskripsi
 Ambil screenshot halaman panjang dengan Alt+S atau satu klik ikon Gulir. Hasil digabung menjadi satu PNG utuh, bukan beberapa potongan.
 
 - Preview sebelum menyimpan.
 - Nama otomatis yang bisa diubah.
-- Simpan ke subfolder Downloads pilihan Anda; folder terakhir diingat.
-- Nama duplikat tidak menimpa unduhan sebelumnya.
+- Pilih nama dan folder tujuan lewat dialog simpan native, tanpa unduhan tambahan.
+- Preview otomatis ditutup setelah 1 menit; dialog/penulisan aktif ditunggu sampai selesai.
+- Jika file sudah ada, periksa konfirmasi penggantian file pada dialog.
 - Pemrosesan lokal, tanpa akun Gulir atau unggahan screenshot ke server.
 - Panel gulir vertikal tertentu dan iframe same-origin dapat diperluas sementara.
 
@@ -22,9 +23,9 @@ Batasan: tidak semua dashboard didukung. Daftar virtual, panel horizontal, konte
 Chrome dapat menampilkan banner debugging selama screenshot karena Gulir menggunakan debugger API untuk mengambil viewport dan memulihkan posisi. Tidak memerlukan login atau langganan.
 
 ## Reviewer notes / single purpose
-Single purpose: capture the user-invoked active web page as one local PNG, preview it and download it. Packaged source only. No analytics or remote code. Review using a public long page or bundled synthetic fixtures, not private JNE credentials.
+Single purpose: capture the user-invoked active web page as one local PNG, preview it and save it to a user-selected file. Packaged source only. No analytics or remote code. Review using a public long page or bundled synthetic fixtures, not private JNE credentials.
 
-Permissions: activeTab scopes user invocation; debugger obtains layout, temporary styles/scroll and viewport screenshots; downloads saves PNG and checks completion; storage remembers chosen folder. No requested host_permissions. Debugger is powerful and needs clear disclosure; do not describe the extension as having no website access.
+Permissions: activeTab scopes user invocation; debugger obtains layout, temporary styles/scroll and viewport screenshots. File System Access writes to the explicitly selected file; no downloads or storage permission. No requested host_permissions. Debugger is powerful and needs clear disclosure; do not describe the extension as having no website access.
 
 ## Belum diisi
 Support contact/URL dan URL kebijakan privasi publik harus ditentukan pemilik. Pernyataan privacy dashboard harus cocok dengan policy dan kode, termasuk pemrosesan screenshot lokal. Jangan klaim nol data ditangani hanya karena tidak ada unggahan.

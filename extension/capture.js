@@ -25,7 +25,7 @@ async function captureAttempt(send, getZoom, settle = false) {
   const started=Date.now();
   try {
     prepared=true;
-    await evaluate(`(()=>{
+    await evaluate(`(async()=>{
       const state={x:scrollX,y:scrollY,changed:[],fixed:[],stylePresence:new Map()};
       globalThis.__gulirCapture=state;
       state.restore=()=>{
@@ -72,13 +72,13 @@ async function captureAttempt(send, getZoom, settle = false) {
             // Sticky headers often shrink on scroll. Keep their original flow
             // footprint so later strips do not shift upward. min-height still
             // permits real content growth, which the size guard must reject.
+            set(el,'transition-property','none');
             const rect=el.getBoundingClientRect?.();
             if(rect&&Number.isFinite(rect.height)&&rect.height>0){
               const c=getComputedStyle(el),extras=(parseFloat(c.paddingTop)||0)+(parseFloat(c.paddingBottom)||0)+(parseFloat(c.borderTopWidth)||0)+(parseFloat(c.borderBottomWidth)||0);
               set(el,'padding-top',c.paddingTop);set(el,'padding-bottom',c.paddingBottom);
               set(el,'min-height',Math.max(0,rect.height-(c.boxSizing==='border-box'?0:extras))+'px');
             }
-            set(el,'transition-property','none');
             set(el,'position','relative');
             for(const prop of ['top','right','bottom','left'])set(el,prop,'auto');
           }else if(pos==='fixed'&&viewportFixed(el)&&!state.fixed.some(item=>item.el===el)){
@@ -88,6 +88,11 @@ async function captureAttempt(send, getZoom, settle = false) {
           if(el.shadowRoot)visit(el.shadowRoot);
         }
       }
+      // Measure the header at the top, not in an already-shrunken scroll state.
+      // Let scroll handlers update their target styles, then disable each sticky
+      // transition before measuring so an in-between animation is never locked.
+      scrollTo({left:0,top:0,behavior:'instant'});
+      await new Promise(r=>{setTimeout(r,250);requestAnimationFrame(()=>requestAnimationFrame(r));});
       state.refresh=()=>visit(document);
       visit(document);
       return true;

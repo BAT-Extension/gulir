@@ -6,7 +6,6 @@ const http=require('node:http');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
-const crypto=require('node:crypto');
 const assert=require('node:assert/strict');
 const project=path.resolve(__dirname,'..');
 const work=fs.mkdtempSync(path.join(process.env.GULIR_TEST_OUTPUT_PARENT||os.tmpdir(),'gulir-browser-'));
@@ -63,6 +62,7 @@ const server=http.createServer((req,res)=>{
  res.end('<!doctype html><title>Gulir fixture</title><style>html,body,h1{margin:0}body{width:1000px;height:'+height+'px;background:linear-gradient(red,blue)}footer{position:absolute;top:'+(height-100)+'px}</style><h1>TOP</h1><footer>BOTTOM</footer>'+(route==='/animated'?'<canvas id=animation width=256 height=256 style="position:absolute;top:300px;left:100px"></canvas><script>let frame=0,running=true;const c=document.getElementById("animation").getContext("2d");function draw(){if(!running)return;c.fillStyle="rgb("+(frame++%256)+",0,0)";c.fillRect(0,0,256,256);requestAnimationFrame(draw);}window.stopFixtureAnimation=()=>running=false;draw();</script>':''));
 });
 let context,worker,origin;
+let browserDownloads=0;
 async function launch(name,dpr=1){
  const profile=path.join(work,name),downloads=path.join(work,name+'-downloads');
  fs.mkdirSync(downloads,{recursive:true});fs.mkdirSync(path.join(profile,'Default'),{recursive:true});
@@ -70,6 +70,7 @@ async function launch(name,dpr=1){
  if(!fs.existsSync(preferences))fs.writeFileSync(preferences,JSON.stringify({download:{default_directory:downloads,prompt_for_download:false,directory_upgrade:true}}));
  context=await chromium.launchPersistentContext(profile,{executablePath,headless:process.env.GULIR_HEADED!=='1',viewport:null,acceptDownloads:false,args:['--window-size=1280,720','--force-device-scale-factor='+dpr,'--disable-extensions-except='+extension,'--load-extension='+extension]});
  context.setDefaultTimeout(15000);
+ context.on('page',page=>page.on('download',()=>browserDownloads++));
  // Playwright's allowAndName download interception replaces native filenames.
  // Use normal Chrome downloads only inside this fresh profile and test directory.
  const setup=await context.newPage(),cdp=await context.newCDPSession(setup);
@@ -105,13 +106,26 @@ async function invoke(page,expectError=false){
 }
 async function pageAt(route){const page=await context.newPage();await page.goto(origin+route);await page.waitForLoadState('load');return page;}
 async function dimensions(preview){return preview.locator('#images img').evaluateAll(imgs=>imgs.map(i=>[i.naturalWidth,i.naturalHeight]));}
-async function save(preview,name,folder){
- await preview.locator('#name').fill(name);await preview.locator('#folder').fill(folder);
+async function save(preview,name){
+ await preview.locator('#name').fill(name);
+ await preview.evaluate(async name=>{
+  const root=await navigator.storage.getDirectory();
+  window.__saveHandle=await root.getFileHandle(name+'.png',{create:true});
+  window.__pickerCalls=0;
+  window.showSaveFilePicker=async options=>{window.__pickerCalls++;window.__pickerOptions=options;return window.__saveHandle;};
+ },name);
  await preview.locator('#save').click();
- await preview.waitForFunction(()=>document.getElementById('status').textContent.includes('berhasil'));
- const items=await preview.evaluate(()=>chrome.downloads.search({orderBy:['-startTime']}));
- assert.equal(items[0].state,'complete');assert.ok(fs.existsSync(items[0].filename));
- return items[0].filename;
+ await preview.waitForFunction(()=>document.getElementById('status').textContent.startsWith('PNG berhasil') && !document.getElementById('save').disabled);
+ const result=await preview.evaluate(async()=>{
+  const file=await __saveHandle.getFile();
+  const source=await (await fetch(document.querySelector('#images img').src)).arrayBuffer();
+  const hash=async bytes=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].join(',');
+  const exact=await hash(source)===await hash(await file.arrayBuffer());
+  return {exact,name:file.name,size:file.size,header:[...new Uint8Array(await file.slice(0,8).arrayBuffer())],calls:__pickerCalls,suggested:__pickerOptions.suggestedName};
+ });
+ assert.equal(result.exact,true);assert.ok(result.size>1000);assert.deepEqual(result.header,[137,80,78,71,13,10,26,10]);
+ assert.equal(result.calls,1);assert.equal(result.suggested,name+'.png');assert.equal(browserDownloads,0);
+ return result.name;
 }
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));origin='http://127.0.0.1:'+server.address().port;
@@ -120,41 +134,82 @@ async function save(preview,name,folder){
  assert.match(await preview.locator('#summary').innerText(),/3200 px/);
  assert.deepEqual(await dimensions(preview),[[1280,3200]]);
  record('real debugger capture and popup preview, 1280x3200');
- const filename=await save(preview,'test-shot','Screenshots/Test');
- assert.equal(filename,path.join(downloads,'Screenshots','Test','test-shot.png'));
- const original=crypto.createHash('sha256').update(fs.readFileSync(filename)).digest('hex');
- record('native PNG filename, subfolder and download completion');
+ assert.equal(await preview.locator('#folder').count(),0);
+ assert.equal(await preview.locator('#save-direct').count(),0);
+ assert.equal(await save(preview,'test-shot'),'test-shot.png');
+ record('single save action: actual OPFS PNG write, no Chrome downloads (chooser mocked)');
  await preview.screenshot({path:path.join(work,'preview.png')});await preview.close();
  const repeated=await invoke(page);
- assert.equal(await repeated.locator('#folder').inputValue(),'Screenshots/Test');
- const duplicate=await save(repeated,'test-shot','Screenshots/Test');
- assert.equal(duplicate,path.join(downloads,'Screenshots','Test','test-shot (1).png'));
- assert.equal(crypto.createHash('sha256').update(fs.readFileSync(filename)).digest('hex'),original);
- record('repeat capture detaches debugger; duplicate download preserves original');await repeated.close();
+ assert.equal(await save(repeated,'test-shot'),'test-shot.png');
+ record('repeat capture detaches debugger and picker save remains available');await repeated.close();
  const interceptedPage=await pageAt('/short'),intercepted=await invoke(interceptedPage);
  const routing=await context.newCDPSession(intercepted);
  const redirected=path.join(work,'routed-downloads');fs.mkdirSync(redirected);
  await routing.send('Browser.setDownloadBehavior',{behavior:'allowAndName',downloadPath:redirected,eventsEnabled:true});
- await intercepted.locator('#name').fill('expected-name');await intercepted.locator('#folder').fill('Screenshots/Expected');await intercepted.locator('#save').click();
- await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.includes('nama/lokasi berbeda'));
- const [routed]=await intercepted.evaluate(()=>chrome.downloads.search({orderBy:['-startTime'],limit:1}));
- assert.equal(routed.state,'complete');assert.equal(path.dirname(routed.filename),redirected);assert.notEqual(path.basename(routed.filename),'expected-name.png');
- assert.equal(await intercepted.locator('#save').isDisabled(),true);
- await routing.send('Browser.setDownloadBehavior',{behavior:'default',eventsEnabled:true});await routing.detach();
- record('browser UUID routing override is detected, no false success or automatic duplicate retry');
- assert.equal(await intercepted.evaluate(()=>typeof showSaveFilePicker),'function');
- await intercepted.evaluate(async()=>{
-   const root=await navigator.storage.getDirectory();const handle=await root.getFileHandle('direct-chosen.png',{create:true});
-   window.__directTestHandle=handle;window.__pickerCalls=0;
-   window.showSaveFilePicker=async options=>{window.__pickerCalls++;window.__pickerOptions=options;return handle};
- });
- await intercepted.locator('#save-direct').click();await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.startsWith('PNG disimpan langsung'));
- const direct=await intercepted.evaluate(async()=>{const file=await __directTestHandle.getFile();return {bytes:file.size,header:[...new Uint8Array(await file.slice(0,8).arrayBuffer())],calls:__pickerCalls,suggested:__pickerOptions.suggestedName}});
- assert.deepEqual(direct.header,[137,80,78,71,13,10,26,10]);assert.ok(direct.bytes>1000);assert.equal(direct.calls,1);assert.equal(direct.suggested,'expected-name.png');
+ assert.equal(await save(intercepted,'expected-name'),'expected-name.png');
+ assert.deepEqual(fs.readdirSync(redirected),[]);
+ assert.deepEqual(fs.readdirSync(downloads),[]);
+ record('UUID download routing override cannot create an extra file: zero downloads');
  await intercepted.evaluate(()=>{window.showSaveFilePicker=async()=>{throw new DOMException('cancelled','AbortError')}});
- await intercepted.locator('#save-direct').click();await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.includes('dibatalkan'));
- assert.equal(await intercepted.locator('#save-direct').isDisabled(),false);
- record('direct save writes exact PNG through FileSystemWritableFileStream; picker cancellation preserves preview (chooser mocked)');await intercepted.close();
+ await intercepted.locator('#save').click();await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.includes('dibatalkan'));
+ assert.equal(await intercepted.locator('#save').isDisabled(),false);
+ assert.equal(await intercepted.locator('#images img').count(),1);
+ assert.equal(browserDownloads,0);
+ record('picker cancellation retains preview and never falls back to download');
+ await intercepted.evaluate(()=>{
+  window.__pickerCalls=0;
+  window.showSaveFilePicker=()=>{window.__pickerCalls++;return new Promise(resolve=>window.__releasePicker=()=>resolve(window.__saveHandle));};
+ });
+ await intercepted.locator('#save').click();
+ await intercepted.evaluate(()=>{document.querySelector('#form').requestSubmit();document.querySelector('#form').requestSubmit();});
+ assert.equal(await intercepted.evaluate(()=>window.__pickerCalls),1);
+ assert.equal(await intercepted.locator('#discard').isDisabled(),true);
+ await intercepted.evaluate(()=>window.__releasePicker());
+ await intercepted.waitForFunction(()=>!document.querySelector('#save').disabled);
+ assert.equal(browserDownloads,0);
+ record('repeated submissions during picker/write are locked to one save');
+ await intercepted.evaluate(()=>{window.showSaveFilePicker=async()=>({createWritable:async()=>{throw Error('test disk unavailable')}})});
+ await intercepted.locator('#save').click();await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.includes('test disk unavailable'));
+ assert.equal(await intercepted.locator('#save').isDisabled(),false);
+ assert.equal(browserDownloads,0);
+ assert.equal(await save(intercepted,'retry-after-failure'),'retry-after-failure.png');
+ record('write failure retains preview, no fallback download, retry writes successfully');
+ await routing.send('Browser.setDownloadBehavior',{behavior:'default',eventsEnabled:true});await routing.detach();
+ await intercepted.close();
+ report.limitations.push('Native OS file chooser is mocked with real OPFS file handles; actual desktop dialog and overwrite prompts require manual verification.');
+ const expires=await invoke(page);
+ await expires.addInitScript(()=>{const original=window.setTimeout;window.setTimeout=(fn,ms,...args)=>ms===60000?(window.__expirePreview=fn,-1):original(fn,ms,...args);});
+ await expires.reload();await expires.waitForFunction(()=>!document.querySelector('#save').disabled);
+ const expired=expires.waitForEvent('close');await expires.evaluate(()=>window.__expirePreview()).catch(()=>{});await expired;
+ record('preview auto-closes on 60-second deadline (clock controlled)');
+ for(const cancel of [false,true]){
+  const deferred=await invoke(page);
+  await deferred.addInitScript(()=>{const original=window.setTimeout;window.setTimeout=(fn,ms,...args)=>ms===60000?(window.__expirePreview=fn,-1):original(fn,ms,...args);});
+  await deferred.reload();await deferred.waitForFunction(()=>!document.querySelector('#save').disabled);
+  await deferred.evaluate(()=>{window.showSaveFilePicker=()=>new Promise((resolve,reject)=>window.__finishPicker=async cancel=>{if(cancel)reject(new DOMException('cancelled','AbortError'));else resolve(await (await navigator.storage.getDirectory()).getFileHandle('deadline.png',{create:true}));});});
+  await deferred.locator('#save').click();await deferred.evaluate(()=>window.__expirePreview());
+  assert.equal(deferred.isClosed(),false);assert.equal(await deferred.locator('#save').isDisabled(),true);
+  const closed=deferred.waitForEvent('close');await deferred.evaluate(cancel=>window.__finishPicker(cancel),cancel).catch(()=>{});await closed;
+  record('expired preview waits for picker '+(cancel?'cancellation':'successful write')+' before closing');
+ }
+ const writing=await invoke(page);
+ await writing.addInitScript(()=>{const original=window.setTimeout;window.setTimeout=(fn,ms,...args)=>ms===60000?(window.__expirePreview=fn,-1):original(fn,ms,...args);});
+ await writing.reload();await writing.waitForFunction(()=>!document.querySelector('#save').disabled);
+ await writing.evaluate(async()=>{
+  const root=await navigator.storage.getDirectory();window.__writingHandle=await root.getFileHandle('deferred-write.png',{create:true});
+  window.showSaveFilePicker=async()=>({name:'deferred-write.png',createWritable:async()=>{
+   const writer=await __writingHandle.createWritable();return {write:async blob=>{await writer.write(blob);await new Promise(resolve=>window.__finishWrite=resolve);},close:()=>writer.close(),abort:()=>writer.abort()};
+  }});
+ });
+ await writing.locator('#save').click();await writing.waitForFunction(()=>typeof window.__finishWrite==='function');
+ await writing.evaluate(()=>window.__expirePreview());assert.equal(writing.isClosed(),false);
+ const writeClosed=writing.waitForEvent('close');await writing.evaluate(()=>window.__finishWrite()).catch(()=>{});await writeClosed;
+ const checker=await context.newPage();await checker.goto('chrome-extension://'+new URL(worker.url()).host+'/preview.html');
+ const persisted=await checker.evaluate(async()=>{const file=await (await (await navigator.storage.getDirectory()).getFileHandle('deferred-write.png')).getFile();return {size:file.size,header:[...new Uint8Array(await file.slice(0,8).arrayBuffer())]};});
+ assert.ok(persisted.size>1000);assert.deepEqual(persisted.header,[137,80,78,71,13,10,26,10]);assert.equal(browserDownloads,0);
+ await checker.close();assert.deepEqual(fs.readdirSync(downloads),[]);assert.deepEqual(fs.readdirSync(redirected),[]);
+ record('expiry during active file write waits for committed PNG, then closes; no downloads');
+ if(process.argv.includes('--save-only')){report.status='SAVE_ACCEPTANCE_PASSED_WITH_REPORTED_LIMITATIONS';return;}
  const longPage=await pageAt('/long'),longPreview=await invoke(longPage);
  assert.deepEqual(await dimensions(longPreview),[[1280,35000]]);
  const samples=await longPreview.locator('#images img').evaluate(img=>{
@@ -172,15 +227,9 @@ async function save(preview,name,folder){
  report.longPageInteriorSamples=samples;
  record('35000px capture: ONE PNG, exact dimensions and continuous interior content');
 
- await longPreview.locator('#folder').fill('../bad');await longPreview.locator('#save').click();
- await longPreview.waitForFunction(()=>document.getElementById('status').textContent.includes('tidak valid'));
- assert.equal(await longPreview.locator('#save').isEnabled(),true);
- record('folder traversal rejected and retry remains available');
- const longFile=await save(longPreview,'long-shot','Screenshots/Test');
- assert.equal(path.basename(longFile),'long-shot.png');
- const longDownloads=await longPreview.evaluate(()=>chrome.downloads.search({filenameRegex:'long-shot'}));
- assert.equal(longDownloads.length,1,'only one download for long page');
- record('35000px single file download without numbered parts');
+ const longFile=await save(longPreview,'long-shot');
+ assert.equal(longFile,'long-shot.png');
+ record('35000px single file direct save without numbered parts or downloads');
 
  await longPreview.close();
  const waiting=context.waitForEvent('page',{timeout:180000}).catch(error=>({error}));
@@ -301,8 +350,9 @@ async function save(preview,name,folder){
  await context.close();context=null;
  await launch('standard');
  const restored=await invoke(await pageAt('/short?restart'));
- assert.equal(await restored.locator('#folder').inputValue(),'Screenshots/Test');
- record('folder preference survives browser restart');
+ assert.equal(await restored.locator('#folder').count(),0);
+ assert.equal(await save(restored,'after-restart'),'after-restart.png');
+ record('picker-only save works after browser restart');
  await context.close();context=null;
  await launch('retina',2);
  const retinaPage=await pageAt('/short?retina');

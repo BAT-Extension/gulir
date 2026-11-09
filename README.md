@@ -1,4 +1,4 @@
-# Gulir 1.2.3 — release candidate
+# Gulir 1.2.4 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -18,9 +18,11 @@ Gulir 1.2.0 telah diuji di Chrome MSI dan Alt+S membuka preview, tetapi capture 
 ## Pemakaian
 Buka halaman web dan tunggu muat selesai. Untuk konten lazy-load, scroll dahulu sampai bawah dan tunggu gambar muncul. Tekan Alt+S atau klik ikon Gulir. Jangan berpindah tab, menggulir, atau mengubah zoom selama pengambilan. Halaman akan terlihat bergulir, lalu posisi semula dipulihkan.
 
-Preview menampilkan “1 PNG utuh”. Ubah nama, isi subfolder relatif seperti Screenshots/Proyek, lalu klik Simpan PNG. Pilihan folder terakhir diingat; kosongkan untuk Downloads utama. Tunggu pesan selesai sebelum menutup preview.
+Preview menampilkan “1 PNG utuh”. Ubah nama lalu klik **Pilih lokasi & simpan PNG**. Tentukan nama dan folder tujuan di dialog native, lalu Save. Chrome mengingat folder terakhir untuk dialog Gulir. Tidak ada kolom subfolder atau unduhan otomatis tambahan ke Downloads. Jika file tujuan sudah ada, periksa konfirmasi penggantian file di dialog; Gulir tidak menambahkan nomor otomatis.
 
-Satu capture menghasilkan satu file, tanpa akhiran bagian -01/-02. Nama duplikat diberi nomor oleh Chrome agar file sebelumnya tidak tertimpa. Folder yang dipilih adalah subfolder Downloads, bukan penjelajah seluruh disk. Lokasi Downloads mengikuti pengaturan Chrome dan kebijakan perangkat.
+Preview ditutup otomatis setelah 1 menit sejak siap. Jika dialog simpan atau penulisan masih aktif saat waktunya habis, penutupan menunggu sampai selesai atau dibatalkan. Sebelum batas waktu, pembatalan mempertahankan preview untuk dicoba lagi. Menutup preview tidak menghapus PNG yang sudah disimpan.
+
+Satu capture menghasilkan satu file, tanpa akhiran bagian -01/-02. Penyimpanan menulis PNG langsung ke file pilihan, bukan melalui API Downloads. Jika dialog tidak tersedia atau penulisan gagal, tidak ada fallback unduhan otomatis. File UUID yang telanjur tersimpan dari versi lama tidak dihapus.
 
 ## Halaman sangat panjang
 Gulir mengambil viewport yang benar-benar dirender, menggabungkan baris secara bertahap, lalu mengenkode **satu PNG lossless**. Tidak membuat canvas setinggi seluruh halaman. Hasil memakai satu piksel gambar per CSS pixel pada zoom/layar Retina; bukan resolusi fisik Retina dua kali lipat.
@@ -47,8 +49,7 @@ Chrome/Web Store, extension lain, file lokal, PDF internal, dan halaman yang dib
 ## Izin dan privasi
 - activeTab: tab yang pengguna pilih melalui toolbar/shortcut.
 - debugger: ukuran halaman, pengguliran, dan screenshot Chrome. Banner debugging dapat muncul. Koneksi dilepas setelah proses, termasuk saat gagal. Tutup DevTools pada tab sasaran.
-- downloads: menyimpan satu PNG ke Downloads dan memantau status.
-- storage: mengingat subfolder.
+Tidak memerlukan izin downloads atau storage. Tujuan file diberikan lewat dialog simpan native.
 
 Screenshot sementara disimpan pada IndexedDB lokal extension. Hapus preview menghapus capture; capture lebih dari 24 jam dibersihkan pada pengambilan berikutnya/startup Chrome, bukan tepat pada jam ke-24. PNG yang telah diunduh tetap ada. Tidak ada analytics, unggahan eksternal, host permission permanen, atau dependensi kode pihak ketiga.
 
@@ -65,7 +66,7 @@ Fixture memakai salinan extension/profil sementara dan loopback server. Test hoo
 Referensi:
 https://developer.chrome.com/docs/extensions/reference/api/commands
 https://developer.chrome.com/docs/extensions/reference/api/debugger
-https://developer.chrome.com/docs/extensions/reference/api/downloads
+https://developer.chrome.com/docs/capabilities/web-apis/file-system-access
 https://chromedevtools.github.io/devtools-protocol/tot/Page/
 
 ## Persiapan publikasi
@@ -80,8 +81,10 @@ Jika ukuran halaman berubah, Gulir membuang seluruh hasil sementara, menyiapkan 
 ### Diagnostik 1.2.3
 Bila ukuran masih berubah setelah satu retry, error PAGE_SIZE hanya mencantumkan dimensi sebelum/sesudah, ukuran viewport, DPR dan nomor retry. Tidak memuat URL atau isi halaman. Versi ini membantu diagnosis perbedaan laptop; bukan klaim bahwa semua kasus dinamis sudah diperbaiki.
 
-### Verifikasi lokasi unduhan
-Gunakan tombol Simpan PNG di preview, bukan Save image as dari menu gambar. Gulir memeriksa nama/subfolder final yang dilaporkan Chrome. Jika browser atau extension lain mengganti routing menjadi nama UUID, Gulir memperingatkan perbedaan dan tidak mengunduh ulang otomatis. Ini bukan jaminan dapat mengesampingkan kebijakan browser.
+### Penyimpanan satu jalur
+Gunakan **Pilih lokasi & simpan PNG** di preview. Tombol ini satu-satunya jalur simpan dan menulis langsung ke file pilihan. Tidak ada tombol unduhan otomatis lain, sehingga routing unduhan Chrome tidak dapat membuat salinan UUID tambahan dari Gulir. Dialog native dan penggantian file perlu diverifikasi di Chrome desktop; otomasi memakai pemilih tiruan dengan file handle OPFS nyata.
 
-### Simpan langsung jika nama/lokasi unduhan diubah browser
-Klik Pilih lokasi… pada preview. Nama dari kolom Nama file menjadi saran di dialog native. Pilih folder tujuan di dialog lalu Save; Chrome mengingat folder terakhir untuk dialog Gulir. Jalur ini menulis PNG langsung ke file pilihan, bukan melalui API unduhan. Kolom Subfolder di Downloads hanya berlaku untuk tombol Simpan PNG. Membatalkan dialog tidak menghapus preview. File UUID yang telanjur tersimpan tidak dihapus otomatis.
+### Perbaikan 1.2.4
+Header lengket diukur dari posisi paling atas, bukan ketika sudah mengecil setelah halaman digulir. Ini memperbaiki penolakan PAGE_SIZE yang direproduksi pada Bitwarden. Pemeriksaan perubahan ukuran dan konten terpotong tetap ketat.
+
+Simpan hanya melalui dialog pilihan file; kolom folder dan jalur unduhan otomatis dihapus. Preview menutup otomatis setelah satu menit, menunggu dialog atau penulisan file yang sedang berlangsung selesai terlebih dahulu.

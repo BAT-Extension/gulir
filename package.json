@@ -6,6 +6,7 @@
     "test:browser": "node tests/browser.cjs",
     "test:browser:nested": "node tests/browser.cjs --nested",
     "test:browser:scrollbar": "node tests/scrollbar.browser.cjs",
-    "test:browser:public": "node tests/public-page.browser.cjs"
+    "test:browser:public": "node tests/public-page.browser.cjs",
+    "test:browser:scrolled-header": "node tests/scrolled-header.browser.cjs"
   }
 }
