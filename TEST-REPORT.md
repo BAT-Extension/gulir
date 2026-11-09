@@ -1,4 +1,4 @@
-# Gulir 1.2.4 — validasi dan gate publikasi
+# Gulir 1.2.5 — validasi dan gate publikasi
 
 ## Riwayat pengujian versi sebelumnya
 - 53 unit tests (run terbaru pada MSI).
@@ -57,3 +57,12 @@ Added native Save File Picker path independent of download routing, with suggest
 - Save/expiry suite: 11 passed. Evidence: gulir-browser-waR7xw/report.json. Exact saved PNG hash matches preview; zero Chrome download events/files even with UUID routing enabled. Cancel, repeated submits, write failure/retry and expiry during pending picker/write verified.
 - OS chooser is mocked with real OPFS file handles; native overwrite dialog not automated. 60-second timer uses controlled test clock. Source of user's original extra UUID file not proven; automatic download path and downloads/storage permissions removed entirely.
 - Latest full-page JNE retest and Chrome Web Store publication remain pending; no user HR data accessed.
+
+## 1.2.5 quick-save and countdown
+- 69 unit tests pass: default-off preference, separate persisted directory handle, permission renewal/denial, same-name suffixes and cross-tab locks, interrupted writes, local timestamp naming and countdown safety.
+- Preview UI visually checked: one editable name, unchecked quick-save option by default, visible60-second countdown, Enter-save label, no delete-preview button.
+- Save-only browser checks pass: real OPFS writes and hash match, IndexedDB handle structured clone across previews with real queryPermission, Enter/success auto-close, cancellation, denied-permission picker fallback, zero Downloads, editing resets and active picker/write pauses countdown. OS chooser and revoked permission interaction are simulated; actual OS dialogs not automated.
+- Native File System Access lacks atomic exclusive-create against unrelated external applications. Origin Web Lock prevents Gulir previews colliding; already existing files are skipped with numbered suffixes.
+
+- Final full+nested browser report: gulir-browser-9FAMrm/report.json. Browser restart retains checkbox and structured-cloned directory handle; real OPFS queryPermission granted, reuse without picker and exact saved PNG hash verified. Existing unrelated filename sentinel remains unchanged after collision.
+- Supplemental1.2.5 public Bitwarden rerun blocked before load by DNS ERR_NAME_NOT_RESOLVED. Capture code unchanged from1.2.4 verified public run; this is not a new live-page pass.

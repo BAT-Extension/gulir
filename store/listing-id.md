@@ -11,7 +11,9 @@ Ambil screenshot halaman panjang dengan Alt+S atau satu klik ikon Gulir. Hasil d
 - Preview sebelum menyimpan.
 - Nama otomatis yang bisa diubah.
 - Pilih nama dan folder tujuan lewat dialog simpan native, tanpa unduhan tambahan.
-- Preview otomatis ditutup setelah 1 menit; dialog/penulisan aktif ditunggu sampai selesai.
+- Countdown 60 detik terlihat; mengedit mengulang waktu, penyimpanan aktif menunda waktu, simpan berhasil menutup preview.
+- Enter untuk simpan. Opsi folder terakhir tersimpan dan default nonaktif; izin folder dipilih pengguna.
+- Nama singkat berbasis waktu lokal, dapat diedit; simpan cepat menghindari nama yang sudah ada.
 - Jika file sudah ada, periksa konfirmasi penggantian file pada dialog.
 - Pemrosesan lokal, tanpa akun Gulir atau unggahan screenshot ke server.
 - Panel gulir vertikal tertentu dan iframe same-origin dapat diperluas sementara.

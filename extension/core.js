@@ -15,7 +15,10 @@ export function folderPath(value) {
   if (parts.some(x => !x || x === '.' || x === '..' || x !== safeName(x + '.png'))) throw Error('Nama subfolder tidak valid. Hindari .. dan karakter khusus.');
   return parts.join('/');
 }
-export function autoName(title, date = new Date()) { return safeName(title) + '_' + date.toISOString().replace(/[:.]/g, '-'); }
+export function autoName(_title, date = new Date()) {
+  const pad=value=>String(value).padStart(2,'0');
+  return String(date.getFullYear()).padStart(4,'0')+pad(date.getMonth()+1)+pad(date.getDate())+'-'+pad(date.getHours())+pad(date.getMinutes())+pad(date.getSeconds());
+}
 export function captureDimensions(width, height) {
   width = Math.ceil(width); height = Math.ceil(height);
   if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1 || width > 16000 || height > 120000 || width * height > 120000000) throw Error('Halaman melebihi batas aman (120 juta piksel / tinggi 120.000 px / lebar 16.000 px). Halaman tidak akan dipotong atau disimpan sebagian.');

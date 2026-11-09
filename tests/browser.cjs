@@ -106,26 +106,30 @@ async function invoke(page,expectError=false){
 }
 async function pageAt(route){const page=await context.newPage();await page.goto(origin+route);await page.waitForLoadState('load');return page;}
 async function dimensions(preview){return preview.locator('#images img').evaluateAll(imgs=>imgs.map(i=>[i.naturalWidth,i.naturalHeight]));}
-async function save(preview,name){
- await preview.locator('#name').fill(name);
+async function pngHash(preview){
+ return preview.evaluate(async()=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',await (await fetch(document.querySelector('#images img').src)).arrayBuffer()))].join(','));
+}
+async function verifyFile(name,expected,directory){
+ const result=await worker.evaluate(async({name,directory})=>{
+  let root=await navigator.storage.getDirectory();if(directory)root=await root.getDirectoryHandle(directory);
+  const file=await (await root.getFileHandle(name)).getFile();
+  return {name:file.name,size:file.size,hash:[...new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer()))].join(','),header:[...new Uint8Array(await file.slice(0,8).arrayBuffer())]};
+ },{name,directory});
+ assert.equal(result.hash,expected);assert.ok(result.size>1000);assert.deepEqual(result.header,[137,80,78,71,13,10,26,10]);assert.equal(browserDownloads,0);return result.name;
+}
+async function save(preview,name,enter=false){
+ await preview.locator('#name').fill(name);const expected=await pngHash(preview);
  await preview.evaluate(async name=>{
-  const root=await navigator.storage.getDirectory();
-  window.__saveHandle=await root.getFileHandle(name+'.png',{create:true});
-  window.__pickerCalls=0;
-  window.showSaveFilePicker=async options=>{window.__pickerCalls++;window.__pickerOptions=options;return window.__saveHandle;};
+  const handle=await (await navigator.storage.getDirectory()).getFileHandle(name+'.png',{create:true});let calls=0;
+  window.showSaveFilePicker=async options=>{if(++calls!==1||options.suggestedName!==name+'.png')throw Error('Invalid picker invocation');return handle;};
  },name);
- await preview.locator('#save').click();
- await preview.waitForFunction(()=>document.getElementById('status').textContent.startsWith('PNG berhasil') && !document.getElementById('save').disabled);
- const result=await preview.evaluate(async()=>{
-  const file=await __saveHandle.getFile();
-  const source=await (await fetch(document.querySelector('#images img').src)).arrayBuffer();
-  const hash=async bytes=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].join(',');
-  const exact=await hash(source)===await hash(await file.arrayBuffer());
-  return {exact,name:file.name,size:file.size,header:[...new Uint8Array(await file.slice(0,8).arrayBuffer())],calls:__pickerCalls,suggested:__pickerOptions.suggestedName};
- });
- assert.equal(result.exact,true);assert.ok(result.size>1000);assert.deepEqual(result.header,[137,80,78,71,13,10,26,10]);
- assert.equal(result.calls,1);assert.equal(result.suggested,name+'.png');assert.equal(browserDownloads,0);
- return result.name;
+ const closed=preview.waitForEvent('close');
+ if(enter===true)await preview.locator('#name').press('Enter');else await preview.locator('#save').click();await closed;
+ return verifyFile(name+'.png',expected);
+}
+async function clockedPreview(page){
+ const preview=await invoke(page);await preview.clock.install();await preview.clock.pauseAt(new Date());await preview.reload();
+ await preview.waitForFunction(()=>!document.querySelector('#save').disabled);return preview;
 }
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));origin='http://127.0.0.1:'+server.address().port;
@@ -134,81 +138,98 @@ async function save(preview,name){
  assert.match(await preview.locator('#summary').innerText(),/3200 px/);
  assert.deepEqual(await dimensions(preview),[[1280,3200]]);
  record('real debugger capture and popup preview, 1280x3200');
- assert.equal(await preview.locator('#folder').count(),0);
- assert.equal(await preview.locator('#save-direct').count(),0);
- assert.equal(await save(preview,'test-shot'),'test-shot.png');
- record('single save action: actual OPFS PNG write, no Chrome downloads (chooser mocked)');
- await preview.screenshot({path:path.join(work,'preview.png')});await preview.close();
- const repeated=await invoke(page);
- assert.equal(await save(repeated,'test-shot'),'test-shot.png');
- record('repeat capture detaches debugger and picker save remains available');await repeated.close();
+ assert.equal(await preview.locator('#folder').count(),0);assert.equal(await preview.locator('#save-direct').count(),0);
+ assert.equal(await preview.locator('#discard').count(),0);assert.equal(await preview.locator('#quick-save').isChecked(),false);
+ assert.match(await preview.locator('#countdown').innerText(),/60|59/);
+ await preview.screenshot({path:path.join(work,'preview.png')});
+ assert.equal(await save(preview,'test-shot',true),'test-shot.png');
+ record('Enter submits native save, exact OPFS PNG, automatic close; quick save defaults off; no discard');
+ const repeated=await invoke(page);assert.equal(await save(repeated,'test-shot'),'test-shot.png');
+ record('repeat capture detaches debugger and native save remains available');
  const interceptedPage=await pageAt('/short'),intercepted=await invoke(interceptedPage);
- const routing=await context.newCDPSession(intercepted);
- const redirected=path.join(work,'routed-downloads');fs.mkdirSync(redirected);
+ const routing=await context.newCDPSession(interceptedPage),redirected=path.join(work,'routed-downloads');fs.mkdirSync(redirected);
  await routing.send('Browser.setDownloadBehavior',{behavior:'allowAndName',downloadPath:redirected,eventsEnabled:true});
- assert.equal(await save(intercepted,'expected-name'),'expected-name.png');
- assert.deepEqual(fs.readdirSync(redirected),[]);
- assert.deepEqual(fs.readdirSync(downloads),[]);
- record('UUID download routing override cannot create an extra file: zero downloads');
  await intercepted.evaluate(()=>{window.showSaveFilePicker=async()=>{throw new DOMException('cancelled','AbortError')}});
  await intercepted.locator('#save').click();await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.includes('dibatalkan'));
- assert.equal(await intercepted.locator('#save').isDisabled(),false);
- assert.equal(await intercepted.locator('#images img').count(),1);
- assert.equal(browserDownloads,0);
- record('picker cancellation retains preview and never falls back to download');
- await intercepted.evaluate(()=>{
-  window.__pickerCalls=0;
-  window.showSaveFilePicker=()=>{window.__pickerCalls++;return new Promise(resolve=>window.__releasePicker=()=>resolve(window.__saveHandle));};
- });
- await intercepted.locator('#save').click();
- await intercepted.evaluate(()=>{document.querySelector('#form').requestSubmit();document.querySelector('#form').requestSubmit();});
- assert.equal(await intercepted.evaluate(()=>window.__pickerCalls),1);
- assert.equal(await intercepted.locator('#discard').isDisabled(),true);
- await intercepted.evaluate(()=>window.__releasePicker());
- await intercepted.waitForFunction(()=>!document.querySelector('#save').disabled);
- assert.equal(browserDownloads,0);
- record('repeated submissions during picker/write are locked to one save');
+ assert.equal(await intercepted.locator('#save').isDisabled(),false);assert.equal(await intercepted.locator('#images img').count(),1);assert.equal(browserDownloads,0);
+ record('picker cancellation retains preview without downloads');
  await intercepted.evaluate(()=>{window.showSaveFilePicker=async()=>({createWritable:async()=>{throw Error('test disk unavailable')}})});
  await intercepted.locator('#save').click();await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.includes('test disk unavailable'));
- assert.equal(await intercepted.locator('#save').isDisabled(),false);
- assert.equal(browserDownloads,0);
- assert.equal(await save(intercepted,'retry-after-failure'),'retry-after-failure.png');
- record('write failure retains preview, no fallback download, retry writes successfully');
+ assert.equal(await intercepted.locator('#save').isDisabled(),false);assert.equal(await save(intercepted,'retry-after-failure'),'retry-after-failure.png');
+ assert.deepEqual(fs.readdirSync(redirected),[]);assert.deepEqual(fs.readdirSync(downloads),[]);
+ record('write failure retains preview; retry closes; UUID download routing creates zero files');
  await routing.send('Browser.setDownloadBehavior',{behavior:'default',eventsEnabled:true});await routing.detach();
- await intercepted.close();
- report.limitations.push('Native OS file chooser is mocked with real OPFS file handles; actual desktop dialog and overwrite prompts require manual verification.');
- const expires=await invoke(page);
- await expires.addInitScript(()=>{const original=window.setTimeout;window.setTimeout=(fn,ms,...args)=>ms===60000?(window.__expirePreview=fn,-1):original(fn,ms,...args);});
- await expires.reload();await expires.waitForFunction(()=>!document.querySelector('#save').disabled);
- const expired=expires.waitForEvent('close');await expires.evaluate(()=>window.__expirePreview()).catch(()=>{});await expired;
- record('preview auto-closes on 60-second deadline (clock controlled)');
- for(const cancel of [false,true]){
-  const deferred=await invoke(page);
-  await deferred.addInitScript(()=>{const original=window.setTimeout;window.setTimeout=(fn,ms,...args)=>ms===60000?(window.__expirePreview=fn,-1):original(fn,ms,...args);});
-  await deferred.reload();await deferred.waitForFunction(()=>!document.querySelector('#save').disabled);
-  await deferred.evaluate(()=>{window.showSaveFilePicker=()=>new Promise((resolve,reject)=>window.__finishPicker=async cancel=>{if(cancel)reject(new DOMException('cancelled','AbortError'));else resolve(await (await navigator.storage.getDirectory()).getFileHandle('deadline.png',{create:true}));});});
-  await deferred.locator('#save').click();await deferred.evaluate(()=>window.__expirePreview());
-  assert.equal(deferred.isClosed(),false);assert.equal(await deferred.locator('#save').isDisabled(),true);
-  const closed=deferred.waitForEvent('close');await deferred.evaluate(cancel=>window.__finishPicker(cancel),cancel).catch(()=>{});await closed;
-  record('expired preview waits for picker '+(cancel?'cancellation':'successful write')+' before closing');
- }
- const writing=await invoke(page);
- await writing.addInitScript(()=>{const original=window.setTimeout;window.setTimeout=(fn,ms,...args)=>ms===60000?(window.__expirePreview=fn,-1):original(fn,ms,...args);});
- await writing.reload();await writing.waitForFunction(()=>!document.querySelector('#save').disabled);
+ report.limitations.push('Native dialogs are mocked with real OPFS handles. OS chooser appearance, external-folder permission prompts and native overwrite confirmation require manual desktop verification.');
+ const expires=await clockedPreview(page);
+ assert.match(await expires.locator('#countdown').innerText(),/60/);
+ await expires.clock.runFor(15000);assert.match(await expires.locator('#countdown').innerText(),/45/);
+ await expires.locator('#name').fill('timer-reset');assert.match(await expires.locator('#countdown').innerText(),/60/);
+ await expires.clock.runFor(59000);assert.equal(expires.isClosed(),false);
+ const expired=expires.waitForEvent('close');await expires.clock.runFor(1000).catch(()=>{});await expired;
+ record('visible 60-second countdown ticks, resets on input, closes at deadline');
+ const deferred=await clockedPreview(page);
+ await deferred.evaluate(()=>{window.__pickerCalls=0;window.showSaveFilePicker=()=>{window.__pickerCalls++;return new Promise((resolve,reject)=>window.__cancelPicker=()=>reject(new DOMException('cancelled','AbortError')));};});
+ await deferred.locator('#save').click();await deferred.evaluate(()=>{document.querySelector('#form').requestSubmit();document.querySelector('#form').requestSubmit();});
+ assert.equal(await deferred.evaluate(()=>window.__pickerCalls),1);
+ await deferred.clock.runFor(120000);assert.equal(deferred.isClosed(),false);assert.equal(await deferred.locator('#save').isDisabled(),true);
+ await deferred.evaluate(()=>window.__cancelPicker());await deferred.waitForFunction(()=>!document.querySelector('#save').disabled);
+ assert.match(await deferred.locator('#countdown').innerText(),/60/);await deferred.clock.runFor(59000);assert.equal(deferred.isClosed(),false);await deferred.close();
+ record('picker pauses expiry, duplicate submits lock, cancellation restarts full countdown');
+ const writing=await clockedPreview(page),writeHash=await pngHash(writing);
  await writing.evaluate(async()=>{
-  const root=await navigator.storage.getDirectory();window.__writingHandle=await root.getFileHandle('deferred-write.png',{create:true});
+  const handle=await (await navigator.storage.getDirectory()).getFileHandle('deferred-write.png',{create:true});
   window.showSaveFilePicker=async()=>({name:'deferred-write.png',createWritable:async()=>{
-   const writer=await __writingHandle.createWritable();return {write:async blob=>{await writer.write(blob);await new Promise(resolve=>window.__finishWrite=resolve);},close:()=>writer.close(),abort:()=>writer.abort()};
+   const writer=await handle.createWritable();return {write:async blob=>{await writer.write(blob);await new Promise(resolve=>window.__finishWrite=resolve);},close:()=>writer.close(),abort:()=>writer.abort()};
   }});
  });
  await writing.locator('#save').click();await writing.waitForFunction(()=>typeof window.__finishWrite==='function');
- await writing.evaluate(()=>window.__expirePreview());assert.equal(writing.isClosed(),false);
+ await writing.clock.runFor(120000);assert.equal(writing.isClosed(),false);
  const writeClosed=writing.waitForEvent('close');await writing.evaluate(()=>window.__finishWrite()).catch(()=>{});await writeClosed;
- const checker=await context.newPage();await checker.goto('chrome-extension://'+new URL(worker.url()).host+'/preview.html');
- const persisted=await checker.evaluate(async()=>{const file=await (await (await navigator.storage.getDirectory()).getFileHandle('deferred-write.png')).getFile();return {size:file.size,header:[...new Uint8Array(await file.slice(0,8).arrayBuffer())]};});
- assert.ok(persisted.size>1000);assert.deepEqual(persisted.header,[137,80,78,71,13,10,26,10]);assert.equal(browserDownloads,0);
- await checker.close();assert.deepEqual(fs.readdirSync(downloads),[]);assert.deepEqual(fs.readdirSync(redirected),[]);
- record('expiry during active file write waits for committed PNG, then closes; no downloads');
+ await verifyFile('deferred-write.png',writeHash);assert.deepEqual(fs.readdirSync(downloads),[]);assert.deepEqual(fs.readdirSync(redirected),[]);
+ record('active write pauses countdown, commits exact PNG, then closes with zero downloads');
+
+ const quick=await invoke(page);await quick.locator('#quick-save').check();await quick.locator('#name').fill('remembered');
+ await quick.evaluate(()=>{window.showDirectoryPicker=async()=>{throw new DOMException('cancelled','AbortError')};});
+ await quick.locator('#save').click();await quick.waitForFunction(()=>!document.querySelector('#save').disabled&&document.querySelector('#status').textContent.includes('dibatalkan'));
+ assert.equal(quick.isClosed(),false);assert.equal(browserDownloads,0);
+ const quickHash=await pngHash(quick);
+ await quick.evaluate(async()=>{
+  const folder=await (await navigator.storage.getDirectory()).getDirectoryHandle('remembered-tests',{create:true});
+  window.showSaveFilePicker=async()=>{throw Error('Quick save unexpectedly opened file chooser')};
+  window.showDirectoryPicker=async options=>{if(options.mode!=='readwrite')throw Error('Wrong directory mode');return folder;};
+ });
+ let quickClosed=quick.waitForEvent('close');await quick.locator('#save').click();await quickClosed;
+ await verifyFile('remembered.png',quickHash,'remembered-tests');
+ const remembered=await invoke(page);assert.equal(await remembered.locator('#quick-save').isChecked(),true);
+ const persisted=await remembered.evaluate(async()=>{
+  const {loadSavePreferences}=await import('./save-preferences.js');const prefs=await loadSavePreferences();
+  const original=await (await navigator.storage.getDirectory()).getDirectoryHandle('remembered-tests');
+  return {enabled:prefs.enabled,kind:prefs.directoryHandle.kind,same:await prefs.directoryHandle.isSameEntry(original),permission:await prefs.directoryHandle.queryPermission({mode:'readwrite'})};
+ });
+ assert.deepEqual(persisted,{enabled:true,kind:'directory',same:true,permission:'granted'});
+ await remembered.evaluate(async()=>{const folder=await (await navigator.storage.getDirectory()).getDirectoryHandle('remembered-tests');const writer=await (await folder.getFileHandle('remembered.png')).createWritable();await writer.write('Existing user file must not be overwritten');await writer.close();});
+ await remembered.locator('#name').fill('remembered');
+ await remembered.evaluate(()=>{window.showDirectoryPicker=window.showSaveFilePicker=async()=>{throw Error('Persisted granted folder must not reopen chooser')};});
+ quickClosed=remembered.waitForEvent('close');await remembered.locator('#name').press('Enter');await quickClosed;
+ await verifyFile('remembered (1).png',quickHash,'remembered-tests');assert.equal(await worker.evaluate(async()=>await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('remembered-tests')).getFileHandle('remembered.png')).getFile().then(file=>file.text())),'Existing user file must not be overwritten');
+ record('quick save cancellation retains preview; preference and real directory handle persist in IndexedDB; granted permission avoids chooser; collision gets suffix without overwrite');
+ const denied=await invoke(page);await denied.locator('#name').fill('denied-fallback');const deniedHash=await pngHash(denied);
+ await denied.evaluate(async()=>{
+  const fallback=await (await navigator.storage.getDirectory()).getDirectoryHandle('fallback-tests',{create:true});
+  FileSystemHandle.prototype.queryPermission=async()=> 'denied';
+  FileSystemHandle.prototype.requestPermission=async()=> 'denied';
+  window.showDirectoryPicker=async()=>fallback;
+  window.showSaveFilePicker=async()=>{throw Error('Denied folder fallback must use directory chooser')};
+ });
+ quickClosed=denied.waitForEvent('close');await denied.locator('#save').click();await quickClosed;
+ await verifyFile('denied-fallback.png',deniedHash,'fallback-tests');
+ record('revoked remembered-folder permission falls back to directory chooser and writes exact PNG');
+ const disabled=await invoke(page);assert.equal(await disabled.locator('#quick-save').isChecked(),true);await disabled.locator('#quick-save').uncheck();
+ await disabled.waitForFunction(async()=>!(await (await import('./save-preferences.js')).loadSavePreferences()).enabled);
+ await disabled.close();
+ const disabledAgain=await invoke(page);assert.equal(await disabledAgain.locator('#quick-save').isChecked(),false);
+ await save(disabledAgain,'quick-save-disabled');record('disabling remembered folder persists and restores native Save As flow');
+ assert.equal(browserDownloads,0);assert.deepEqual(fs.readdirSync(downloads),[]);assert.deepEqual(fs.readdirSync(redirected),[]);
  if(process.argv.includes('--save-only')){report.status='SAVE_ACCEPTANCE_PASSED_WITH_REPORTED_LIMITATIONS';return;}
  const longPage=await pageAt('/long'),longPreview=await invoke(longPage);
  assert.deepEqual(await dimensions(longPreview),[[1280,35000]]);
@@ -347,12 +368,19 @@ async function save(preview,name){
   record('Alt+S activation','NOT_VERIFIED','Headless keyboard events did not invoke a Chrome browser accelerator; manual desktop check remains.');
   report.limitations.push('Real desktop shortcut activation is not verified.');
  }
+ const preferencePage=await context.newPage();await preferencePage.goto('chrome-extension://'+new URL(worker.url()).host+'/preview.html');
+ await preferencePage.evaluate(async()=>{await (await import('./save-preferences.js')).setRememberFolder(true);});await preferencePage.close();
  await context.close();context=null;
  await launch('standard');
  const restored=await invoke(await pageAt('/short?restart'));
- assert.equal(await restored.locator('#folder').count(),0);
- assert.equal(await save(restored,'after-restart'),'after-restart.png');
- record('picker-only save works after browser restart');
+ assert.equal(await restored.locator('#quick-save').isChecked(),true);
+ const restartPrefs=await restored.evaluate(async()=>{const prefs=await (await import('./save-preferences.js')).loadSavePreferences();return {kind:prefs.directoryHandle.kind,permission:await prefs.directoryHandle.queryPermission({mode:'readwrite'}),name:prefs.directoryHandle.name};});
+ assert.deepEqual(restartPrefs,{kind:'directory',permission:'granted',name:'fallback-tests'});
+ await restored.locator('#name').fill('after-restart');const restartHash=await pngHash(restored);
+ await restored.evaluate(()=>{window.showDirectoryPicker=window.showSaveFilePicker=async()=>{throw Error('Restart must reuse persisted granted directory')};});
+ const restartClosed=restored.waitForEvent('close');await restored.locator('#save').click();await restartClosed;
+ await verifyFile('after-restart.png',restartHash,'fallback-tests');
+ record('browser restart persists preference and real directory handle, queries permission and saves without chooser');
  await context.close();context=null;
  await launch('retina',2);
  const retinaPage=await pageAt('/short?retina');
