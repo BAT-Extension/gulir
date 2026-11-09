@@ -1,7 +1,7 @@
-# Gulir 1.2.1 — validasi dan gate publikasi
+# Gulir 1.2.2 — validasi dan gate publikasi
 
 ## Lulus
-- 52 unit tests (run terbaru pada MSI).
+- 53 unit tests (run terbaru pada MSI).
 - Browser suite setelah integrasi logo: capture nyata debugger, preview, filename/folder, duplicate-safe download, scrolling/restoration,35.000px satu PNG, zoom/DPR, folder persistence.
 - Nested suite: fixed app shell, nested panels, body scroller, same-origin iframe, clipped ancestor, initial scroll offsets; horizontal unsupported fails safely; cross-origin warning.
 - Stress run sebelum perubahan logo:70.001px satu PNG dan20MP high-entropy. Logo hanya menambah aset/UI; selector pengujian kini khusus #images img.
@@ -27,3 +27,10 @@ Semua di /home/putrimak/.cache/gulir-validation-20261108/. Profil sintetis terpi
 Reproduced the exact user-reported DIV 1059/1044px, overflow=auto, position=static error by enabling classic scrollbars in isolated Chromium (Playwright otherwise hides scrollbars). Fix adds measured scrollbar height to expanded box sizing. No clipping tolerance increase. New tests/scrollbar.browser.cjs covers border-box and content-box with/without padding/borders, visible bottom green pixels, late-growth rejection, exact style/scroll/size restoration. Real JNE retest is still pending.
 
 Latest full+nested regression after 1.2.1 fix: /home/putrimak/.cache/gulir-validation-20261108/gulir-browser-k3gsBn/report.json, passed. Four classic-scrollbar browser cases passed. Unit52/52 passed.
+
+## 1.2.2 public Bitwarden and bounded loading
+Public https://bitwarden.com/ reproduced a size-change error at first scroll. Lazy-loading grew page height 7778→8534px and its sticky header repeatedly shrank 20px. A bounded warm-up plus single whole-image retry and reversible sticky minimum-height preservation produced one 1280×8554PNG in isolated Chromium. No login/forms/private profile used. Full+nested regression gulir-browser-jvTwt3 passed, including finite lazy growth, unbounded growth refusal and shrinking-header bottom pixels/restoration. Unit 53/53 passed. This does not certify every JNE page; no HR pages accessed.
+
+Public screenshot visually inspected through footer: 1280×8554, cookie banner retained once in first viewport, no repeated overlays. Delayed overlays are re-scanned before each strip and restored. Public artifact: gulir-public-rpATOD/bitwarden-public.png.
+
+Final 1.2.2 verification: gulir-browser-Sf8nPd/report.json full+nested+late-overlay suite passed; gulir-public-99Ohxs/report.json confirmed one1280×8554PNG and exact scroll/URL restoration; four classic-scrollbar cases passed.

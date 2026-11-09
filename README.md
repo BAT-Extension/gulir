@@ -1,4 +1,4 @@
-# Gulir 1.2.1 — release candidate
+# Gulir 1.2.2 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -73,3 +73,6 @@ Lihat `store/READINESS.md`, `store/listing-id.md` dan `store/privacy-policy-draf
 
 ### Perbaikan 1.2.1
 Tinggi panel kini memasukkan ruang scrollbar horizontal klasik yang terukur. Error 1059/1044px direproduksi dan diperbaiki pada fixture browser; batas clipping tetap ketat. Retest pada JNE asli masih diperlukan.
+
+### Perbaikan 1.2.2
+Jika ukuran halaman berubah, Gulir membuang seluruh hasil sementara, menyiapkan lazy-load dengan batas 20 detik dan maksimal 3 sapuan / 240 langkah, lalu mengulang gambar utuh satu kali. Header sticky yang mengecil dipertahankan ruang asalnya selama capture. Halaman yang terus berubah tetap ditolak, bukan dipotong. Persiapan dapat memicu lazy-load/JavaScript scroll milik situs. Tidak melakukan klik, login atau navigasi otomatis ke halaman lain.

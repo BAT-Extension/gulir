@@ -22,3 +22,5 @@ Jangan menonaktifkan pemeriksaan clipping demi lolos test. Paket kandidat boleh 
 Sumber: https://developer.chrome.com/docs/webstore/cws-dashboard-listing
 https://developer.chrome.com/docs/webstore/program-policies/user-data-faq
 https://developer.chrome.com/docs/webstore/publish
+
+1.2.2: bounded whole-image retry for lazy-loading, shrinking sticky headers and delayed fixed-overlay handling. Public Bitwarden screenshot visually checked; this does not replace private JNE retesting.

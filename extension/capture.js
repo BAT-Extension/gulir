@@ -2,8 +2,18 @@
 import {encodePng} from './png.js';
 import {captureDimensions} from './core.js';
 import {expandScrollableContent} from './expand.js';
+import {settleLazyPage} from './settle.js';
 const wait = ms => new Promise(resolve=>setTimeout(resolve,ms));
 export async function captureSinglePng(send, getZoom) {
+  try { return await captureAttempt(send, getZoom); }
+  catch (error) {
+    // Never merge strips from two geometries. Retry the entire image once only
+    // after the first attempt restored the page, with bounded lazy-load settling.
+    if (error.code !== 'PAGE_SIZE_CHANGED') throw error;
+    return captureAttempt(send, getZoom, true);
+  }
+}
+async function captureAttempt(send, getZoom, settle = false) {
   const startFrame=(await send('Page.getFrameTree')).frameTree.frame;
   const {executionContextId:contextId}=await send('Page.createIsolatedWorld',{frameId:startFrame.id,worldName:'gulir-'+crypto.randomUUID()});
   const evaluate=async expression=>{
@@ -59,19 +69,30 @@ export async function captureSinglePng(send, getZoom) {
         for(const el of root.querySelectorAll('*')){
           const pos=getComputedStyle(el).position;
           if(pos==='sticky'){
+            // Sticky headers often shrink on scroll. Keep their original flow
+            // footprint so later strips do not shift upward. min-height still
+            // permits real content growth, which the size guard must reject.
+            const rect=el.getBoundingClientRect?.();
+            if(rect&&Number.isFinite(rect.height)&&rect.height>0){
+              const c=getComputedStyle(el),extras=(parseFloat(c.paddingTop)||0)+(parseFloat(c.paddingBottom)||0)+(parseFloat(c.borderTopWidth)||0)+(parseFloat(c.borderBottomWidth)||0);
+              set(el,'padding-top',c.paddingTop);set(el,'padding-bottom',c.paddingBottom);
+              set(el,'min-height',Math.max(0,rect.height-(c.boxSizing==='border-box'?0:extras))+'px');
+            }
             set(el,'transition-property','none');
             set(el,'position','relative');
             for(const prop of ['top','right','bottom','left'])set(el,prop,'auto');
-          }else if(pos==='fixed'&&viewportFixed(el)){
+          }else if(pos==='fixed'&&viewportFixed(el)&&!state.fixed.some(item=>item.el===el)){
             set(el,'transition-property','none');
             state.fixed.push({el,value:el.style.getPropertyValue('opacity'),priority:el.style.getPropertyPriority('opacity')});
           }
           if(el.shadowRoot)visit(el.shadowRoot);
         }
       }
+      state.refresh=()=>visit(document);
       visit(document);
       return true;
     })()`);
+    if(settle){const readiness=await evaluate(`(${settleLazyPage.toString()})()`);if(!readiness?.ok)throw Error(readiness?.error||'Halaman belum stabil. Tidak ada gambar sebagian yang disimpan.');}
     const expansion=await evaluate(`(${expandScrollableContent.toString()})()`);
     if(!expansion?.ok){
       if(expansion?.restored===false)await evaluate('globalThis.__gulirCapture.expansionPreparationRestored={restored:false}');
@@ -100,7 +121,7 @@ export async function captureSinglePng(send, getZoom) {
       if(!state.capturing)throw Error('Pengambilan dibatalkan sebelum selesai. Tidak ada gambar sebagian yang disimpan.');
       if(state.visibility!=='visible')throw Error('Tab tidak aktif. Pertahankan tab ini di depan selama screenshot.');
       if(frame.loaderId!==startFrame.loaderId||frame.url!==startFrame.url)throw Error('Halaman berpindah saat screenshot. Ulangi pada halaman yang stabil.');
-      if(current.width!==size.width||current.height!==size.height)throw Error('Ukuran halaman berubah saat screenshot. Muat semua konten lalu ulangi.');
+      if(current.width!==size.width||current.height!==size.height){const error=Error('Ukuran halaman berubah saat screenshot. Muat semua konten lalu ulangi.');error.code='PAGE_SIZE_CHANGED';throw error;}
       if(state.dpr!==dpr||await getZoom()!==zoom||state.width!==initial.width||state.height!==initial.height)throw Error('Ukuran viewport atau zoom berubah saat screenshot. Ulangi.');
       return state;
     };
@@ -117,6 +138,7 @@ export async function captureSinglePng(send, getZoom) {
           const cols=Math.min(tileWidth,width-x);
           const state=await evaluate(`(async()=>{
             const s=globalThis.__gulirCapture;if(!s||s.cleaned)throw Error('Capture expired');
+            s.refresh();
             if(${y}>0||${x}>0)for(const item of s.fixed){if(getComputedStyle(item.el).position!=='fixed')continue;item.el.style.setProperty('opacity','0','important');if(Number(getComputedStyle(item.el).opacity)!==0)throw Error('Fixed overlay could not be hidden');}
             scrollTo({left:${Math.max(0,x-2)},top:${Math.max(0,y-2)},behavior:'instant'});
             await new Promise(r=>{setTimeout(r,250);requestAnimationFrame(()=>requestAnimationFrame(r));});
@@ -125,6 +147,9 @@ export async function captureSinglePng(send, getZoom) {
           lastX=state.x;lastY=state.y;
           // Wait for raster work after scrolling, without requiring an animated page to freeze.
           await wait(60);
+          // A scroll handler may insert a new fixed overlay after our first scan.
+          // Hide it before rasterizing this strip, and restore it with the rest.
+          if(y>0||x>0)await evaluate(`(()=>{const s=globalThis.__gulirCapture;if(!s||s.cleaned)throw Error('Capture expired');s.refresh();for(const item of s.fixed){if(getComputedStyle(item.el).position!=='fixed')continue;item.el.style.setProperty('opacity','0','important');if(Number(getComputedStyle(item.el).opacity)!==0)throw Error('Fixed overlay could not be hidden');}})()`);
           const before=await check();
           if(before.x!==lastX||before.y!==lastY)throw Error('Halaman digulir saat screenshot. Jangan gulir sampai selesai.');
           if(cancelled)throw Error('Penggabungan PNG dibatalkan.');
