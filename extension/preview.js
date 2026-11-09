@@ -1,4 +1,3 @@
-import {closePreviewOnly} from './close-preview.js';
 import {loadSavePreferences,setRememberFolder,saveWithPreferences} from './save-preferences.js';
 import {createCountdown} from './countdown.js';
 import {dbOp} from './db.js';
@@ -7,8 +6,8 @@ const $=id=>document.getElementById(id);
 const id=new URLSearchParams(location.search).get('id');
 let record,preferences={enabled:false},saving=false,preferencePending=false,countdown;const urls=[];
 const status=text=>{$('status').textContent=text;};
-const closePreview=async()=>{let message;try{if(await closePreviewOnly())return;message='Preview tetap terbuka agar Chrome tidak ikut tertutup. Tutup tab preview ini secara manual.';}catch{message='Preview tidak dapat ditutup otomatis. Tutup tab preview ini secara manual.';}$('countdown').textContent='Tutup otomatis dihentikan.';status(($('status').textContent?$('status').textContent+' ':'')+message);};
-const startCountdown=()=>{countdown?.stop();countdown=createCountdown({onTick:seconds=>{$('countdown').textContent=seconds===null?'Waktu ditunda selama penyimpanan…':'Tutup otomatis dalam '+seconds+' detik';},onExpire:()=>{closePreview();}});};
+const keepPreviewOpen=()=>{$('countdown').textContent='Penutupan otomatis dinonaktifkan.';};
+const startCountdown=()=>{countdown?.stop();countdown=createCountdown({onTick:seconds=>{$('countdown').textContent=seconds===null?'Waktu ditunda selama penyimpanan...':'Pengingat dalam '+seconds+' detik (preview tetap terbuka)';},onExpire:keepPreviewOpen});};
 const describeFolder=()=>{$('folder-note').textContent=preferences.enabled?(preferences.directoryHandle?.name?'Simpan cepat ke: '+preferences.directoryHandle.name+'. Jika izin kedaluwarsa, pilih folder lagi.':'Saat menyimpan pertama kali, pilih folder dan izinkan akses. Pilihan ini disimpan di browser ini.'):'Setiap simpan membuka pemilih folder; nama tetap mengikuti kolom di atas. Centang untuk memakai folder tersimpan tanpa dialog jika izin masih berlaku.';};
 $('shortcut').onclick=()=>chrome.tabs.create({url:'chrome://extensions/shortcuts'});
 for(const event of ['input','keydown','pointerdown'])$('form').addEventListener(event,()=>{if(!saving)countdown?.reset();});
@@ -26,7 +25,7 @@ $('form').onsubmit=async event=>{
   try{
     const name=safeName($('name').value);$('name').value=name;
     const saved=await saveWithPreferences(record.parts[0],name+'.png',preferences);
-    preferences=saved.preferences||preferences;status('PNG berhasil disimpan: '+saved.name+'.');countdown?.stop();await closePreview();
+    preferences=saved.preferences||preferences;status('PNG berhasil disimpan: '+saved.name+'.');countdown?.stop();keepPreviewOpen();
   }catch(error){status(error.name==='AbortError'?'Penyimpanan dibatalkan. Preview tetap tersedia.':'Simpan belum berhasil. '+error.message);}
   finally{saving=false;$('save').disabled=typeof showDirectoryPicker!=='function';$('quick-save').disabled=false;countdown?.resume();}
 };

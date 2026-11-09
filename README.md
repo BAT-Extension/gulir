@@ -1,4 +1,4 @@
-# Gulir 1.2.6 — release candidate
+# Gulir 1.2.7 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -20,7 +20,7 @@ Buka halaman web dan tunggu muat selesai. Untuk konten lazy-load, scroll dahulu 
 
 Preview menampilkan “1 PNG utuh”. Ubah nama lalu klik **Simpan PNG**. Tentukan nama di kolom preview, lalu pilih folder tujuan pada dialog native. Chrome mengingat folder terakhir untuk dialog Gulir. Tidak ada kolom subfolder atau unduhan otomatis tambahan ke Downloads. Jika nama sudah ada, Gulir menambahkan nomor tanpa menimpa file tersebut.
 
-Countdown 60 detik terlihat, diulang saat mengedit dan ditunda selama dialog atau penulisan. Penyimpanan berhasil langsung menutup preview. Batal atau gagal memberi 60 detik baru untuk mencoba lagi. Menutup preview tidak menghapus PNG yang sudah disimpan.
+Hotfix keamanan 1.2.7: penutupan otomatis dinonaktifkan sepenuhnya. Setelah simpan atau countdown selesai, semua tab/jendela tetap terbuka. Tutup preview melalui X bawaan Chrome. PNG yang sudah disimpan tidak dihapus.
 
 Satu capture menghasilkan satu file, tanpa akhiran bagian -01/-02. Penyimpanan menulis PNG langsung ke file pilihan, bukan melalui API Downloads. Jika dialog tidak tersedia atau penulisan gagal, tidak ada fallback unduhan otomatis. File UUID yang telanjur tersimpan dari versi lama tidak dihapus.
 
@@ -100,3 +100,6 @@ Simpan hanya melalui dialog pilihan file; kolom folder dan jalur unduhan otomati
 Penutupan otomatis hanya menghapus ID tab preview yang telah diverifikasi. Tidak memakai window.close atau menutup jendela Chrome. Jika preview merupakan tab terakhir yang tersisa, Gulir membiarkannya terbuka agar browser tidak keluar.
 
 Nama di preview menjadi sumber nama file untuk kedua mode penyimpanan. Dialog hanya memilih direktori; tidak ada saran nama browser yang dapat mengganti nama itu. File lama selalu dilewati dengan akhiran nomor.
+
+### Hotfix keamanan 1.2.7
+Laporan pengguna bahwa Chrome masih ikut tertutup membuat jaminan 1.2.6 tidak memadai. Seluruh penutupan tab/jendela oleh kode Gulir kini dinonaktifkan, bukan sekadar menambahkan pemeriksaan ID. Countdown hanya pengingat; simpan tidak menutup preview. Catatan penutupan versi sebelumnya di atas adalah riwayat, bukan perilaku 1.2.7. Penyebab persis insiden pengguna belum direproduksi.

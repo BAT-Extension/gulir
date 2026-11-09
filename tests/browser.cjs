@@ -119,10 +119,10 @@ async function verifyFile(name,expected,directory){
 }
 async function survivors(preview){
  const id=await targetFor(preview);
- const before=await worker.evaluate(async id=>(await chrome.tabs.query({})).filter(t=>t.id!==id).map(t=>({id:t.id,windowId:t.windowId,url:t.url})),id);
+ const before=await worker.evaluate(async id=>(await chrome.tabs.query({})).map(t=>({id:t.id,windowId:t.windowId,url:t.url})),id);
  const windows=await worker.evaluate(async()=> (await chrome.windows.getAll()).map(w=>w.id));
  return async()=>{
-  assert.equal(preview.isClosed(),true,'only preview should close');
+  assert.equal(preview.isClosed(),false,'preview and every browser window must remain open');
   const after=await worker.evaluate(async()=> (await chrome.tabs.query({})).map(t=>({id:t.id,windowId:t.windowId,url:t.url})));
   assert.deepEqual(after.sort((a,b)=>a.id-b.id),before.sort((a,b)=>a.id-b.id),'all other tabs survive unchanged');
   const remaining=await worker.evaluate(async()=> (await chrome.windows.getAll()).map(w=>w.id));
@@ -140,8 +140,9 @@ async function save(preview,name,enter=false,expectedName=name+'.png'){
    return root;
   };
  },name);
- const closed=preview.waitForEvent('close').catch(async error=>{console.error('SAVE DEBUG',await preview.evaluate(async()=>({status:document.querySelector('#status').textContent,current:await chrome.tabs.getCurrent(),url:location.href,tabs:await chrome.tabs.query({})})));throw error;});
- if(enter===true)await preview.locator('#name').press('Enter');else await preview.locator('#save').click();await closed;await checkSurvivors();
+ if(enter===true)await preview.locator('#name').press('Enter');else await preview.locator('#save').click();
+ await preview.waitForFunction(()=>document.querySelector('#status').textContent.includes('PNG berhasil disimpan'));
+ await checkSurvivors();
  return verifyFile(expectedName,expected);
 }
 async function clockedPreview(page){
@@ -166,7 +167,7 @@ async function clockedPreview(page){
  assert.match(await preview.locator('#countdown').innerText(),/60|59/);
  await preview.screenshot({path:path.join(work,'preview.png')});
  assert.equal(await save(preview,'test-shot',true),'test-shot.png');
- record('Enter submits directory save with exact UI filename and OPFS PNG; only preview closes; quick save defaults off; no discard');
+ record('Enter submits directory save with exact UI filename and OPFS PNG; all tabs and windows remain open; quick save defaults off; no discard');
  const untouched=await invoke(page),automaticName=await untouched.locator('#name').inputValue();
  assert.ok(automaticName.length>0);
  assert.equal(await save(untouched,automaticName),automaticName+'.png');
@@ -184,7 +185,7 @@ async function clockedPreview(page){
  await intercepted.locator('#save').click();await intercepted.waitForFunction(()=>document.querySelector('#status').textContent.includes('test disk unavailable'));
  assert.equal(await intercepted.locator('#save').isDisabled(),false);assert.equal(await save(intercepted,'retry-after-failure'),'retry-after-failure.png');
  assert.deepEqual(fs.readdirSync(redirected),[]);assert.deepEqual(fs.readdirSync(downloads),[]);
- record('write failure retains preview; retry closes; UUID download routing creates zero files');
+ record('write failure retains preview; retry preserves preview; UUID download routing creates zero files');
  await routing.send('Browser.setDownloadBehavior',{behavior:'default',eventsEnabled:true});await routing.detach();
  report.limitations.push('Headless multi-window focus is not a native accelerator test: capture invokes the real background handler with the active source tab in its own window.');
  report.limitations.push('Directory dialogs are mocked with real OPFS handles; tests verify exact UI filenames and complete PNG bytes. Native OS folder chooser appearance and external-folder permission prompts require manual desktop verification.');
@@ -193,8 +194,8 @@ async function clockedPreview(page){
  await expires.clock.runFor(15000);assert.match(await expires.locator('#countdown').innerText(),/45/);
  await expires.locator('#name').fill('timer-reset');assert.match(await expires.locator('#countdown').innerText(),/60/);
  await expires.clock.runFor(59000);assert.equal(expires.isClosed(),false);
- const expirySurvivors=await survivors(expires),expired=expires.waitForEvent('close');await expires.clock.runFor(1000).catch(()=>{});await expired;await expirySurvivors();
- record('visible 60-second countdown ticks, resets on input, closes at deadline');
+ const expirySurvivors=await survivors(expires);await expires.clock.runFor(1000);await expirySurvivors();assert.match(await expires.locator('#countdown').innerText(),/dinonaktifkan/);
+ record('visible 60-second countdown ticks, resets on input, keeps every tab/window open at deadline');
  const deferred=await clockedPreview(page);
  await deferred.evaluate(()=>{window.__pickerCalls=0;window.showDirectoryPicker=()=>{window.__pickerCalls++;return new Promise((resolve,reject)=>window.__cancelPicker=()=>reject(new DOMException('cancelled','AbortError')));};});
  await deferred.locator('#save').click();await deferred.evaluate(()=>{document.querySelector('#form').requestSubmit();document.querySelector('#form').requestSubmit();});
@@ -215,9 +216,9 @@ async function clockedPreview(page){
  });
  await writing.locator('#name').fill('deferred-write');await writing.locator('#save').click();await writing.waitForFunction(()=>typeof window.__finishWrite==='function');
  await writing.clock.runFor(120000);assert.equal(writing.isClosed(),false);
- const writeClosed=writing.waitForEvent('close');await writing.evaluate(()=>window.__finishWrite()).catch(()=>{});await writeClosed;
+ await writing.evaluate(()=>window.__finishWrite());await writing.waitForFunction(()=>document.querySelector('#status').textContent.includes('PNG berhasil disimpan'));assert.equal(writing.isClosed(),false);
  await verifyFile('deferred-write.png',writeHash);assert.deepEqual(fs.readdirSync(downloads),[]);assert.deepEqual(fs.readdirSync(redirected),[]);
- record('active write pauses countdown, commits exact PNG, then closes with zero downloads');
+ record('active write pauses countdown, commits exact PNG, then stays open with zero downloads');
 
  const quick=await invoke(page);await quick.locator('#quick-save').check();await quick.locator('#name').fill('remembered');
  await quick.evaluate(()=>{window.showDirectoryPicker=async()=>{throw new DOMException('cancelled','AbortError')};});
@@ -229,7 +230,7 @@ async function clockedPreview(page){
   window.showSaveFilePicker=async()=>{throw Error('Quick save unexpectedly opened file chooser')};
   window.showDirectoryPicker=async options=>{if(options.mode!=='readwrite')throw Error('Wrong directory mode');return folder;};
  });
- let quickClosed=quick.waitForEvent('close');await quick.locator('#save').click();await quickClosed;
+ await quick.locator('#save').click();await quick.waitForFunction(()=>document.querySelector('#status').textContent.includes('PNG berhasil disimpan'));assert.equal(quick.isClosed(),false);
  await verifyFile('remembered.png',quickHash,'remembered-tests');
  const remembered=await invoke(page);assert.equal(await remembered.locator('#quick-save').isChecked(),true);
  const persisted=await remembered.evaluate(async()=>{
@@ -241,7 +242,7 @@ async function clockedPreview(page){
  await remembered.evaluate(async()=>{const folder=await (await navigator.storage.getDirectory()).getDirectoryHandle('remembered-tests');const writer=await (await folder.getFileHandle('remembered.png')).createWritable();await writer.write('Existing user file must not be overwritten');await writer.close();});
  await remembered.locator('#name').fill('remembered');
  await remembered.evaluate(()=>{window.showDirectoryPicker=window.showSaveFilePicker=async()=>{throw Error('Persisted granted folder must not reopen chooser')};});
- quickClosed=remembered.waitForEvent('close');await remembered.locator('#name').press('Enter');await quickClosed;
+ await remembered.locator('#name').press('Enter');await remembered.waitForFunction(()=>document.querySelector('#status').textContent.includes('PNG berhasil disimpan'));assert.equal(remembered.isClosed(),false);
  await verifyFile('remembered (1).png',quickHash,'remembered-tests');assert.equal(await worker.evaluate(async()=>await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('remembered-tests')).getFileHandle('remembered.png')).getFile().then(file=>file.text())),'Existing user file must not be overwritten');
  record('quick save cancellation retains preview; preference and real directory handle persist in IndexedDB; granted permission avoids chooser; collision gets suffix without overwrite');
  const denied=await invoke(page);await denied.locator('#name').fill('denied-fallback');const deniedHash=await pngHash(denied);
@@ -252,7 +253,7 @@ async function clockedPreview(page){
   window.showDirectoryPicker=async()=>fallback;
   window.showSaveFilePicker=async()=>{throw Error('Denied folder fallback must use directory chooser')};
  });
- quickClosed=denied.waitForEvent('close');await denied.locator('#save').click();await quickClosed;
+ await denied.locator('#save').click();await denied.waitForFunction(()=>document.querySelector('#status').textContent.includes('PNG berhasil disimpan'));assert.equal(denied.isClosed(),false);
  await verifyFile('denied-fallback.png',deniedHash,'fallback-tests');
  record('revoked remembered-folder permission falls back to directory chooser and writes exact PNG');
  const disabled=await invoke(page);assert.equal(await disabled.locator('#quick-save').isChecked(),true);await disabled.locator('#quick-save').uncheck();
@@ -265,9 +266,9 @@ async function clockedPreview(page){
  await worker.evaluate(()=>globalThis.__gulirTestCapture({id:9999,url:'chrome://settings',title:'Settings'}));
  const errorExpiry=await errorPage;await errorExpiry.waitForLoadState();await errorExpiry.clock.install();await errorExpiry.clock.pauseAt(new Date());await errorExpiry.reload();
  await errorExpiry.waitForFunction(()=>document.querySelector('#status').textContent.includes('Tab ini tidak dapat'));
- const errorSurvivors=await survivors(errorExpiry),errorClosed=errorExpiry.waitForEvent('close');
- await errorExpiry.clock.runFor(60000).catch(()=>{});await errorClosed;await errorSurvivors();
- record('error preview expiry closes only its popup; source tabs and independent windows survive');
+ const errorSurvivors=await survivors(errorExpiry);
+ await errorExpiry.clock.runFor(60000);await errorSurvivors();
+ record('error preview expiry preserves its popup; source tabs and independent windows survive');
  if(process.argv.includes('--save-only')){report.status='SAVE_ACCEPTANCE_PASSED_WITH_REPORTED_LIMITATIONS';return;}
  const longPage=await pageAt('/long'),longPreview=await invoke(longPage);
  assert.deepEqual(await dimensions(longPreview),[[1280,35000]]);
@@ -416,7 +417,7 @@ async function clockedPreview(page){
  assert.deepEqual(restartPrefs,{kind:'directory',permission:'granted',name:'fallback-tests'});
  await restored.locator('#name').fill('after-restart');const restartHash=await pngHash(restored);
  await restored.evaluate(()=>{window.showDirectoryPicker=window.showSaveFilePicker=async()=>{throw Error('Restart must reuse persisted granted directory')};});
- const restartClosed=restored.waitForEvent('close');await restored.locator('#save').click();await restartClosed;
+ await restored.locator('#save').click();await restored.waitForFunction(()=>document.querySelector('#status').textContent.includes('PNG berhasil disimpan'));assert.equal(restored.isClosed(),false);
  await verifyFile('after-restart.png',restartHash,'fallback-tests');
  record('browser restart persists preference and real directory handle, queries permission and saves without chooser');
  await context.close();context=null;
@@ -424,7 +425,7 @@ async function clockedPreview(page){
  const lastSource=await pageAt('/short?last-tab'),last=await clockedPreview(lastSource),lastId=await targetFor(last);
  await worker.evaluate(async id=>{const others=(await chrome.tabs.query({})).filter(t=>t.id!==id);await chrome.tabs.remove(others.map(t=>t.id));},lastId);
  await last.clock.runFor(60000);
- assert.equal(last.isClosed(),false);assert.match(await last.locator('#status').innerText(),/Chrome tidak ikut tertutup/);
+ assert.equal(last.isClosed(),false);assert.match(await last.locator('#countdown').innerText(),/dinonaktifkan/);
  assert.equal(await worker.evaluate(async()=> (await chrome.tabs.query({})).length),1);
  assert.equal(await last.evaluate(async()=> (await import('./close-preview.js')).closePreviewOnly()),false);
  await last.locator('#name').fill('last-tab-save');const lastHash=await pngHash(last);
@@ -432,11 +433,6 @@ async function clockedPreview(page){
  await last.locator('#save').click();await last.waitForFunction(()=>!document.querySelector('#save').disabled);
  assert.equal(last.isClosed(),false);await verifyFile('last-tab-save.png',lastHash);
  record('last Chrome tab guard keeps browser open after expiry, direct close attempt, and successful exact-name save');
- // Reproduce only the conditional legacy last-window failure in this isolated profile.
- const legacyClose=last.waitForEvent('close');
- await last.evaluate(()=>window.close()).catch(()=>{});await legacyClose;
- const stillConnected=context.browser()?.isConnected();
- record('legacy window.close closes the sole remaining preview window', 'PASSED', "Synthetic last-window case only; not proof of the user's original window state. Browser connection immediately after close: "+stillConnected);
  await context.close();context=null;
  await launch('retina',2);
  const retinaPage=await pageAt('/short?retina');

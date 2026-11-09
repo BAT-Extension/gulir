@@ -1,8 +1,22 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {closePreviewOnly} from '../extension/close-preview.js';
-const url='chrome-extension://abc/preview.html?id=capture';
-function fixture(current={id:4,url},others=[{id:9}]){const removed=[];return {removed,tabs:{getCurrent:async()=>current,query:async()=>[current,...others],remove:async id=>removed.push(id)}};}
-test('only exact preview tab is removed, never another tab/window',async()=>{const f=fixture();assert.equal(await closePreviewOnly(f.tabs,url,'chrome-extension://abc/preview.html'),true);assert.deepEqual(f.removed,[4]);});
-test('last remaining Chrome tab is kept open',async()=>{const f=fixture({id:4,url},[]);assert.equal(await closePreviewOnly(f.tabs,url,'chrome-extension://abc/preview.html'),false);assert.deepEqual(f.removed,[]);});
-test('wrong tab identity, non-preview URL and missing context fail closed',async()=>{for(const current of [{id:4,url:'https://example.org'},{id:-1,url},{url},{id:4,url:'chrome-extension://abc/settings.html'}]){const f=fixture(current);assert.equal(await closePreviewOnly(f.tabs,url,'chrome-extension://abc/preview.html'),false);assert.deepEqual(f.removed,[]);}assert.equal(await closePreviewOnly({},url,url),false);});
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile,readdir} from 'node:fs/promises';
+import {closePreviewOnly} from '../extension/close-preview.js';
+test('safety stop never reads or invokes any browser tab API',async()=>{
+ const tabs=new Proxy({}, {get(){throw Error('Browser API must never be touched');}});
+ assert.equal(await closePreviewOnly(tabs,'chrome-extension://abc/preview.html','chrome-extension://abc/preview.html'),false);
+ assert.equal(await closePreviewOnly(),false);
+});
+test('shipped extension has no tab/window close or removal call',async()=>{
+ for(const file of await readdir(new URL('../extension/',import.meta.url))){
+  if(!/\.(js|html)$/.test(file))continue;
+  const source=await readFile(new URL('../extension/'+file,import.meta.url),'utf8');
+  assert.doesNotMatch(source,/\b(?:tabs|windows)\s*\.\s*remove\s*\(|\b(?:window|self|globalThis|top|parent)\s*\.\s*close\s*\(/,file);
+ }
+});
 
-test('Chrome current-tab URL may be omitted without tabs permission',async()=>{const f=fixture({id:4});assert.equal(await closePreviewOnly(f.tabs,url,'chrome-extension://abc/preview.html'),true);assert.deepEqual(f.removed,[4]);});
+test('preview visibly identifies hotfix version',async()=>{
+ const manifest=JSON.parse(await readFile(new URL('../extension/manifest.json',import.meta.url),'utf8'));
+ const html=await readFile(new URL('../extension/preview.html',import.meta.url),'utf8');
+ assert.ok(html.includes('GULIR '+manifest.version));
+});

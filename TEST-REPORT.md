@@ -1,3 +1,30 @@
+# Gulir 1.2.7 safety hotfix
+
+## Current result
+- User reported 1.2.6 still closed Chrome. Exact whole-browser incident has NOT been reproduced; do not claim its root cause is known.
+- Removed every programmatic preview/tab/window closure. The old exported helper is inert and never touches browser APIs.
+- Countdown is reminder-only. Successful save, failure, cancellation, error preview, and last-tab situations leave the preview open. Close using Chrome's own X.
+- No new permissions. No personal Chrome profile or active user tabs were inspected.
+- Preview displays GULIR 1.2.7 to distinguish old loaded code.
+
+## Verification
+- Unit regressions and shipped-runtime no-close source guard: 72 passed.
+- Isolated real Chromium full suite: 28 passed, one not verified (native Alt+S in headless).
+- Report: /tmp/gulir-browser-6alFfp/report.json on MSI WSL.
+- Final focused real Chromium save suite: 14 passed; /tmp/gulir-browser-2UXvkf/report.json.
+- Real popup + independent normal windows retained their complete tab identities after save and reminder expiry.
+- Sole remaining preview tab stays alive after expiry, inert helper invocation, and successful save.
+- Exact PNG bytes/default/custom names, persisted quick-save preference and directory handles, collisions without overwrite, cancellation/write failures, delayed writes, zero downloads, browser restart checked.
+- The full run preceded only the cosmetic visible-version label; the final focused suite retested the final artifact and passed.
+
+## Limits
+- Headless Chromium with isolated disposable profiles, not the user's Chrome session.
+- Native directory picker is replaced by a stub returning actual OPFS handles. Native OS dialog appearance/permissions are not automated.
+- Headless native Alt+S is not verified.
+- This removes extension-initiated closure; it cannot prove Chrome itself can never crash or establish why the user's earlier browser exited.
+- Existing previews from older loaded versions must be closed manually; reload/reinstall the extension and verify 1.2.7 visibly.
+
+## Historical reports (superseded for closing behavior)
 # Gulir 1.2.6 — validasi dan gate publikasi
 
 ## Riwayat pengujian versi sebelumnya
