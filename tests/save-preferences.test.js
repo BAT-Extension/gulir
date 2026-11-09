@@ -19,7 +19,7 @@ function fixture(){
 }
 test('preference defaults off, toggle persists separately from remembered directory',async()=>{
  const f=fixture();
- assert.deepEqual(await f.api.loadSavePreferences(),{enabled:false,directoryHandle:null});
+ assert.deepEqual(await f.api.loadSavePreferences(),{enabled:false,directoryHandle:null,lastSavedLocation:null});
  await f.api.setRememberFolder(true);
  assert.equal((await f.api.loadSavePreferences()).enabled,true);
  const prefs=await f.api.loadSavePreferences();
@@ -84,4 +84,28 @@ test('expired prompt permission granted on save reuses remembered folder',async(
  f.directory.queryPermission=async()=>'prompt';f.directory.requestPermission=async()=>{requested++;return 'granted';};
  await f.api.saveWithPreferences(new Blob(['image']),'shot.png',prefs);
  assert.equal(requested,1);assert.equal(f.picks,0);assert.equal(f.writes.length,1);
+});
+
+
+test('normal save reports actual selected path before write and remembers only committed result',async()=>{
+ const f=fixture();const prefs=await f.api.loadSavePreferences();let destination;
+ const result=await f.api.saveWithPreferences(new Blob(['image']),'shot.png',prefs,{onDestination:value=>{destination=value;assert.equal(f.writes.length,0);assert.equal(f.values.has('last-saved-location'),false);}});
+ assert.deepEqual(destination,{directoryName:'Screenshots',fileName:'shot.png'});
+ assert.deepEqual(result.preferences.lastSavedLocation,destination);
+ assert.deepEqual((await f.api.loadSavePreferences()).lastSavedLocation,destination);
+ assert.equal((await f.api.loadSavePreferences()).directoryHandle,null,'normal save does not silently enable folder reuse');
+ const next=await f.api.saveWithPreferences(new Blob(['image']),'shot.png',prefs);
+ assert.deepEqual(next.preferences.lastSavedLocation,{directoryName:'Screenshots',fileName:'shot (1).png'});
+});
+test('failed write does not replace last successful destination',async()=>{
+ const history={directoryName:'Earlier',fileName:'saved.png'},changes=[];
+ const directory={name:'Failed',getFileHandle:async(name,options)=>{if(!options?.create)throw missing();return {name,createWritable:async()=>({write:async()=>{throw Error('disk full');},abort:async()=>{}})};}};
+ const api=createSavePreferences({locks,storage:async(method,key,value)=>{if(method==='put')changes.push([key,value]);return key==='last-saved-location'?history:null;},directoryPicker:async()=>directory});
+ await assert.rejects(api.saveWithPreferences(new Blob(),'shot.png',{enabled:false}),/disk full/);
+ assert.deepEqual(changes,[]);assert.deepEqual((await api.loadSavePreferences()).lastSavedLocation,history);
+});
+test('history storage failure cannot turn a committed PNG into a failed save',async()=>{
+ const f=fixture();const api=createSavePreferences({locks,storage:async()=>{throw Error('history unavailable');},directoryPicker:async()=>f.directory});
+ const result=await api.saveWithPreferences(new Blob(),'saved.png',{enabled:false});
+ assert.equal(result.name,'saved.png');assert.equal(result.locationRemembered,false);assert.equal(f.writes.length,1);
 });

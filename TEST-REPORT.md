@@ -1,3 +1,28 @@
+# Gulir 1.2.9 storage-location display
+
+## Current result
+- Added a prominent location panel showing the selected/remembered folder name and PNG filename. Editing the filename updates the planned location; collision handling shows the actual numbered filename before writing.
+- Before ordinary folder selection, the panel says the destination is not yet selected. Disabling quick save never treats the saved handle as the next destination.
+- Granted, prompt, denied, and unknown folder-permission states have honest wording. Opening a preview queries permission only; it never requests a grant.
+- Last successful folder/file metadata is kept locally for later previews. Cancelled or failed writes do not replace it. A history-storage error cannot turn a committed PNG into a failed save or retry it.
+- Full OS paths are not exposed by File System Access. The UI explicitly labels the display as relative folder/file information and does not invent a Windows/Linux path. No new permissions.
+
+## Final verification
+- Unit suite: 97 passed, including 11 new location/history tests.
+- Graphical location suite: 5 grouped checks passed, covering no selection, initial quick save, selected destination, edited filename, collision suffix, persisted history, permission prompt/denial, disabling quick save, cancellation and failed write. Report: /tmp/gulir-location-xbA7mb/report.json.
+- Full capture/save/nested Chromium suite: 37 passed; native Alt+S unverified in headless. Report: /tmp/gulir-browser-IradX0/report.json.
+- Graphical close-safety suite: 7 passed, preserving 1.2.8 multi-window, sole-preview, and concurrent-close protections. Report: /tmp/gulir-close-0lrD3C/report.json.
+- Selected and remembered location screenshots inspected visually, including permission wording and last-save separation: /tmp/gulir-location-xbA7mb/selected-location.png and remembered-location.png.
+- Package script verified the 1.2.9 archive, runtime contents, and checksum.
+
+## Limits and upgrade
+- Tests use separate disposable Chromium profiles on MSI WSL. Native folder selection is controlled in tests; file handles, storage, writes, and browser APIs are real.
+- A full path such as C:\Users\name\Pictures is unavailable to this browser API. Folder names alone cannot distinguish two same-named directories. The native picker remains the authoritative way to inspect/select the full filesystem location.
+- Last-save text is stored metadata, not a live filesystem browser; files moved or deleted outside Gulir are not tracked.
+- Reload Gulir and create a new preview showing GULIR 1.2.9. No deployment or store submission.
+
+## Historical verification below
+
 # Gulir 1.2.8 preview-only close verification
 
 ## Current result

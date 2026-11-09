@@ -1,4 +1,4 @@
-# Gulir 1.2.8 — release candidate
+# Gulir 1.2.9 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -21,6 +21,8 @@ Buka halaman web dan tunggu muat selesai. Untuk konten lazy-load, scroll dahulu 
 Preview menampilkan “1 PNG utuh”. Ubah nama lalu klik **Simpan PNG**. Tentukan nama di kolom preview, lalu pilih folder tujuan pada dialog native. Chrome mengingat folder terakhir untuk dialog Gulir. Tidak ada kolom subfolder atau unduhan otomatis tambahan ke Downloads. Jika nama sudah ada, Gulir menambahkan nomor tanpa menimpa file tersebut.
 
 Preview ditutup otomatis setelah file selesai disimpan atau 60 detik tanpa aktivitas. Mengedit nama mengulang countdown; pemilihan folder dan penulisan file menundanya. Hanya tab preview yang ditutup. Jika tidak ada tab biasa selain preview, Gulir membuka jendela normal berisi Tab Baru terlebih dahulu agar Chrome tetap berjalan. Bila pemeriksaan keamanan atau pembuatan Tab Baru gagal, preview tetap terbuka dengan petunjuk menutup manual. PNG yang sudah disimpan tidak dihapus.
+
+Panel **Lokasi penyimpanan** menampilkan nama folder dan nama PNG. Pada simpan cepat, nama mengikuti folder tersimpan dan kolom nama file; izin yang perlu diperbarui diberi keterangan. Pada mode biasa, tujuan baru diketahui setelah memilih folder. Lokasi simpan terakhir dicatat lokal dan ditampilkan pada preview berikutnya. Chrome hanya memberikan nama folder, bukan path lengkap Windows/Linux, sehingga tampilan ini adalah lokasi relatif dalam folder pilihan.
 
 Satu capture menghasilkan satu file, tanpa akhiran bagian -01/-02. Penyimpanan menulis PNG langsung ke file pilihan, bukan melalui API Downloads. Jika dialog tidak tersedia atau penulisan gagal, tidak ada fallback unduhan otomatis. File UUID yang telanjur tersimpan dari versi lama tidak dihapus.
 
@@ -60,6 +62,7 @@ Screenshot sementara disimpan pada IndexedDB lokal extension. Capture lebih dari
 - GULIR_STRESS=1 menambahkan canvas 20MP.
 - GULIR_CHROMIUM_EXECUTABLE memilih executable Chrome lain.
 - GULIR_HEADED=1 membuka jendela browser uji terlihat.
+- npm run test:browser:location menguji tampilan lokasi, nama aktual/sufiks duplikat, izin folder, pembatalan, dan riwayat simpan.
 - npm run test:browser:close menguji simpan/countdown, beberapa jendela, preview dalam tab biasa, preview terakhir, dan expiry bersamaan. Jalankan dengan GULIR_HEADED=1 untuk pengujian jendela grafis terisolasi.
 
 Fixture memakai salinan extension/profil sementara dan loopback server. Test hook tidak masuk extension asli. Lihat TEST-REPORT.md untuk hasil dan batas validasi. Keberhasilan ukuran saja tidak membuktikan isi; pengujian memeriksa piksel asli.
@@ -111,3 +114,11 @@ Laporan pengguna bahwa Chrome masih ikut tertutup membuat jaminan 1.2.6 tidak me
 - Preview lain atau popup bukan jaminan browser tetap terbuka. Jika tidak ada tab biasa, Gulir membuat dan memverifikasi jendela normal dengan Tab Baru sebelum menutup preview. Tidak ada pemanggilan window.close atau windows.remove.
 - Uji Chromium terisolasi mencakup beberapa jendela normal, satu preview terakhir, dua preview yang kedaluwarsa bersamaan, dan keberlanjutan penggunaan browser setelah penutupan. Insiden Chrome pengguna sebelumnya belum direproduksi secara persis; ini bukan klaim bahwa penyebab insiden tersebut sudah diketahui.
 - Tutup preview versi lama secara manual, klik Reload pada kartu Gulir di chrome://extensions, lalu ambil screenshot baru dan pastikan label GULIR 1.2.8.
+
+### Lokasi penyimpanan 1.2.9
+- Panel lokasi menampilkan folder / nama-file.png, termasuk nama yang sedang diedit dan akhiran nomor yang benar jika ada benturan.
+- Tidak mengarang path penuh seperti C:\Users\... atau /home/.... File System Access API hanya membuka nama folder, sehingga keterbatasan ini ditulis langsung di panel.
+- Mode biasa tetap meminta folder setiap simpan. Folder tersimpan tidak ditampilkan sebagai tujuan pasti ketika simpan cepat dimatikan.
+- Izin folder diperiksa tanpa meminta izin baru saat membuka preview. Jika perlu, konfirmasi/pemilihan folder tetap dilakukan hanya ketika pengguna menyimpan.
+- Riwayat lokasi diperbarui setelah file selesai ditulis. Pembatalan atau kegagalan tidak mengganti lokasi sukses sebelumnya. Kegagalan pencatatan riwayat tidak mengulang penyimpanan PNG yang sudah berhasil.
+- Muat ulang extension dan gunakan preview baru berlabel GULIR 1.2.9. Perilaku penutupan aman 1.2.8 tetap dipertahankan.

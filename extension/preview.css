@@ -2,3 +2,5 @@
 .brand{display:inline-flex;align-items:center;gap:10px}.brand .brand-icon{width:32px;height:32px;margin:0;flex:none}
 
 .option{display:flex;align-items:center;gap:10px;font-size:14px}.option input{width:18px;height:18px;margin:0;flex:none}#countdown{font-variant-numeric:tabular-nums;font-weight:700;color:#007d75}
+
+.save-location-panel{padding:14px 16px;border:1px solid #c4dedb;border-radius:10px;background:#f3faf9}.save-location-panel strong{font-size:12px;color:#36605c}#save-location{font-weight:650;overflow-wrap:anywhere;margin:4px 0}#location-note,#last-save{overflow-wrap:anywhere}#last-save{border-top:1px solid #d6e5e3;padding-top:8px}

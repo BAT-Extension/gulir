@@ -59,7 +59,7 @@ async function usableNormalWindow() {
  worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
  await worker.evaluate(()=>chrome.windows.create({url:'about:blank',type:'normal'}));
  const saved=await preview(),id=await idFor(saved),before=await snapshot();
- await saved.screenshot({path:path.join(work,'preview-1.2.8.png')});
+ await saved.screenshot({path:path.join(work,'preview.png')});
  assert.equal(before.windows.filter(window=>window.type==='normal').length,2);
  await save(saved);await unchangedExcept(before,[id]);
  record('save closes only its popup; two independent normal windows and all original tab IDs survive');
