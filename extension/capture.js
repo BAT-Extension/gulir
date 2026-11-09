@@ -1,6 +1,7 @@
 // Capture real viewport pixels, never an oversized compositor surface.
 import {encodePng} from './png.js';
 import {captureDimensions} from './core.js';
+import {expandScrollableContent} from './expand.js';
 const wait = ms => new Promise(resolve=>setTimeout(resolve,ms));
 export async function captureSinglePng(send, getZoom) {
   const startFrame=(await send('Page.getFrameTree')).frameTree.frame;
@@ -15,17 +16,20 @@ export async function captureSinglePng(send, getZoom) {
   try {
     prepared=true;
     await evaluate(`(()=>{
-      const state={x:scrollX,y:scrollY,changed:[],fixed:[]};
+      const state={x:scrollX,y:scrollY,changed:[],fixed:[],stylePresence:new Map()};
       globalThis.__gulirCapture=state;
       state.restore=()=>{
         if(state.cleaned)return;
-        state.cleaned=true;clearTimeout(state.timer);removeEventListener('pagehide',state.restore);
+        state.cleaned=true;
+        state.expansionRestored=globalThis.__gulirExpansion?.restore()??state.expansionPreparationRestored??{restored:true,errors:[]};
+        clearTimeout(state.timer);removeEventListener('pagehide',state.restore);
         for(const item of state.fixed){if(item.value)item.el.style.setProperty('opacity',item.value,item.priority);else item.el.style.removeProperty('opacity');}
         // Commit original opacity while transitions are still disabled, so
         // restoring the author's transition does not fade the page back in.
         for(const item of state.fixed)void getComputedStyle(item.el).opacity;
         scrollTo({left:state.x,top:state.y,behavior:'instant'});
         for(const item of [...state.changed].reverse()){if(item.prop==='transition-property')void getComputedStyle(item.el).opacity;if(item.value)item.el.style.setProperty(item.prop,item.value,item.priority);else item.el.style.removeProperty(item.prop);}
+        for(const [el,present] of state.stylePresence)if(present===false&&!el.getAttribute('style')?.trim())el.removeAttribute('style');
         scrollTo({left:state.x,top:state.y,behavior:'instant'});
         delete globalThis.__gulirCapture;
       };
@@ -34,6 +38,7 @@ export async function captureSinglePng(send, getZoom) {
       addEventListener('pagehide',state.restore,{once:true});
       state.timer=setTimeout(state.restore,300000);
       const set=(el,prop,value)=>{
+        if(!state.stylePresence.has(el))state.stylePresence.set(el,el.hasAttribute?.('style'));
         state.changed.push({el,prop,value:el.style.getPropertyValue(prop),priority:el.style.getPropertyPriority(prop)});
         el.style.setProperty(prop,value,'important');
       };
@@ -67,6 +72,11 @@ export async function captureSinglePng(send, getZoom) {
       visit(document);
       return true;
     })()`);
+    const expansion=await evaluate(`(${expandScrollableContent.toString()})()`);
+    if(!expansion?.ok){
+      if(expansion?.restored===false)await evaluate('globalThis.__gulirCapture.expansionPreparationRestored={restored:false}');
+      throw Error(expansion?.error||'Area scroll tidak dapat diperluas dengan aman.');
+    }
     await wait(350); // Allow the debugger banner to settle before measuring.
     const initial=await evaluate('({width:innerWidth,height:innerHeight,clientWidth:document.documentElement.clientWidth,clientHeight:document.documentElement.clientHeight,dpr:devicePixelRatio})');
     const zoom=await getZoom(),dpr=initial.dpr;
@@ -85,7 +95,8 @@ export async function captureSinglePng(send, getZoom) {
       if(Date.now()-started>300000)throw Error('Pengambilan melebihi 5 menit. Tidak ada gambar sebagian yang disimpan.');
       const frame=(await send('Page.getFrameTree')).frameTree.frame;
       const current=(await send('Page.getLayoutMetrics')).cssContentSize;
-      const state=await evaluate('({width:innerWidth,height:innerHeight,dpr:devicePixelRatio,x:scrollX,y:scrollY,visibility:document.visibilityState,capturing:!!globalThis.__gulirCapture})');
+      const state=await evaluate('({width:innerWidth,height:innerHeight,dpr:devicePixelRatio,x:scrollX,y:scrollY,visibility:document.visibilityState,capturing:!!globalThis.__gulirCapture,expansion:globalThis.__gulirExpansion?.check()})');
+      if(!state.expansion?.ok)throw Error(state.expansion?.error||'Area scroll berubah selama screenshot.');
       if(!state.capturing)throw Error('Pengambilan dibatalkan sebelum selesai. Tidak ada gambar sebagian yang disimpan.');
       if(state.visibility!=='visible')throw Error('Tab tidak aktif. Pertahankan tab ini di depan selama screenshot.');
       if(frame.loaderId!==startFrame.loaderId||frame.url!==startFrame.url)throw Error('Halaman berpindah saat screenshot. Ulangi pada halaman yang stabil.');
@@ -106,7 +117,7 @@ export async function captureSinglePng(send, getZoom) {
           const cols=Math.min(tileWidth,width-x);
           const state=await evaluate(`(async()=>{
             const s=globalThis.__gulirCapture;if(!s||s.cleaned)throw Error('Capture expired');
-            if(${y}>0||${x}>0)for(const item of s.fixed){item.el.style.setProperty('opacity','0','important');if(Number(getComputedStyle(item.el).opacity)!==0)throw Error('Fixed overlay could not be hidden');}
+            if(${y}>0||${x}>0)for(const item of s.fixed){if(getComputedStyle(item.el).position!=='fixed')continue;item.el.style.setProperty('opacity','0','important');if(Number(getComputedStyle(item.el).opacity)!==0)throw Error('Fixed overlay could not be hidden');}
             scrollTo({left:${Math.max(0,x-2)},top:${Math.max(0,y-2)},behavior:'instant'});
             await new Promise(r=>{setTimeout(r,250);requestAnimationFrame(()=>requestAnimationFrame(r));});
             return {x:scrollX,y:scrollY};
@@ -148,7 +159,7 @@ export async function captureSinglePng(send, getZoom) {
     try{blob=await encodePng({width,height,strips:source});}
     finally{cancelled=true;await source.return();}
     await check();
-    return {width,height,blob};
+    return {width,height,blob,captureInfo:{expandedContainers:expansion.expandedContainers,expandedFrames:expansion.expandedFrames,warnings:expansion.warnings||[]}};
   } catch(e){failure=e;throw e;}
   finally {
     if(prepared){
@@ -159,7 +170,7 @@ export async function captureSinglePng(send, getZoom) {
           await new Promise(r=>{setTimeout(r,250);requestAnimationFrame(()=>requestAnimationFrame(r));});
           s.restore();
           await new Promise(r=>{setTimeout(r,250);requestAnimationFrame(()=>requestAnimationFrame(r));});
-          return {restored:Math.abs(scrollX-s.x)<0.01&&Math.abs(scrollY-s.y)<0.01};
+          return {restored:s.expansionRestored?.restored!==false&&Math.abs(scrollX-s.x)<0.01&&Math.abs(scrollY-s.y)<0.01};
         })()`);
         if(!restored?.restored)throw Error('Posisi gulir tidak pulih.');
       } catch(e){throw Error((failure?failure.message+' ':'')+'Screenshot dibatalkan karena tampilan asal tidak dapat dipastikan pulih. Muat ulang halaman jika tampilannya berubah.');}

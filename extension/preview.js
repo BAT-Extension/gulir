@@ -39,6 +39,9 @@ async function init() {
   $('name').value=record.name;
   $('folder').value=(await chrome.storage.local.get({folder:'Screenshots'})).folder;
   $('summary').textContent=record.width+' × '+record.height+' px · 1 PNG utuh';
+  $('warnings').textContent=(record.captureInfo?.warnings||[]).join(' ');
+  const expanded=(record.captureInfo?.expandedContainers||0)+(record.captureInfo?.expandedFrames||0);
+  if(expanded)$('summary').textContent+=' · '+expanded+' area scroll diperluas';
   record.parts.forEach((blob,i)=>{const url=URL.createObjectURL(blob);urls.push(url);const f=document.createElement('figure');const cap=document.createElement('figcaption');cap.textContent='Seluruh halaman';const img=new Image();img.src=url;img.alt='Screenshot seluruh halaman';f.append(cap,img);$('images').append(f);});
   const commands=await chrome.commands.getAll();const key=commands.find(x=>x.name==='_execute_action')?.shortcut;
   $('keys').textContent=key?'Shortcut aktif: '+key:'Alt+S belum terpasang (mungkin bentrok). Klik Atur shortcut untuk memilih tombol.';

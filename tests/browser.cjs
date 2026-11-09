@@ -24,6 +24,33 @@ const server=http.createServer((req,res)=>{
   res.end('<!doctype html><style>html{scroll-behavior:smooth!important;scroll-snap-type:y mandatory!important}html,body{margin:0}body{width:2203px;height:2407px}canvas{display:block}#fixed{position:fixed!important;top:0;left:0;width:120px;height:40px;background:#ff00ff;visibility:visible!important;opacity:0.8!important;transition:opacity 1s!important}#bottom{position:fixed;bottom:0;left:300px;width:120px;height:30px;background:#00ff00;transition:opacity 1s!important}#right{position:fixed;right:0;top:100px;width:20px;height:100px;background:white}#sticky-wrap{position:absolute;top:500px;left:0;width:200px;height:600px}#sticky{position:sticky!important;top:10px!important;height:30px;background:#00ffff} #fixed span{visibility:visible!important}#contained{position:absolute;left:1500px;top:1300px;translate:0;width:100px;height:100px}#contained-fixed{position:fixed;left:10px;top:10px;width:40px;height:40px;background:#ffff00}</style><canvas width=2203 height=2407></canvas><div id=fixed><span style=background:#ff00ff;display:block;width:120px;height:40px></span></div><div id=bottom></div><div id=right></div><div id=sticky-wrap><div id=sticky></div></div><div id=contained><div id=contained-fixed></div></div><script>const c=document.querySelector("canvas").getContext("2d"),im=c.createImageData(2203,2407);for(let y=0;y<2407;y++)for(let x=0;x<2203;x++){let i=(y*2203+x)*4;im.data[i]=x%251;im.data[i+1]=y%251;im.data[i+2]=(Math.floor(x/251)+Math.floor(y/251)*9)%251;im.data[i+3]=255;}c.putImageData(im,0,0);'+(route==='/growing'?'addEventListener("scroll",()=>{if(scrollY>500)document.body.style.height="2507px";});':'')+'</script>');
   return;
  }
+ if(route==='/nested-body'){
+  res.setHeader('Content-Type','text/html');res.end('<!doctype html><style>html{height:100%;overflow:hidden}body{margin:0;height:100vh;overflow:auto}#body-data{height:2600px;background:linear-gradient(red,blue)}footer{height:100px;background:lime}</style><div id=body-data>BODY TOP</div><footer>BODY BOTTOM</footer>');return;
+ }
+ if(route==='/nested-offscreen'){
+  res.setHeader('Content-Type','text/html');res.end('<!doctype html><style>html,body{margin:0}#space{height:100px}#outer{width:600px;height:300px;overflow:auto}#inner{height:200px;overflow:auto}#inner-data{height:1400px;background:linear-gradient(red,blue)}#tail{height:1600px;background:lime}</style><div id=space></div><div id=outer><div id=inner><div id=inner-data>INNER</div></div><div id=tail>TAIL</div></div>');return;
+ }
+ if(route==='/nested-horizontal'){
+  res.setHeader('Content-Type','text/html');res.end('<!doctype html><style>html,body{margin:0}#horizontal{width:300px;height:200px;overflow:auto}#wide{width:1000px;height:600px;background:linear-gradient(red,blue)}</style><div id=horizontal><div id=wide>WIDE PANEL</div></div>');return;
+ }
+ if(route==='/nested-app'){
+  res.setHeader('Content-Type','text/html');
+  res.end('<!doctype html><style>html,body{margin:0;height:100%;overflow:hidden}header{position:fixed;top:0;height:56px;width:100%;background:#123456}#shell{position:fixed;left:0;right:0;top:56px;bottom:0;overflow:auto}#intro{height:200px;background:#abcdef}.columns{display:flex;align-items:flex-start}#policy{width:600px;height:280px;max-height:280px!important;overflow-y:auto;flex:none}#data{width:600px;height:2400px;background:linear-gradient(red,blue)}#side{width:400px;height:120px;background:#fedcba}footer{height:60px;background:lime}</style><header>HEADER</header><main id=shell><div id=intro>INTRO <span id=clock>0</span></div><div class=columns><section id=policy><div id=data>POLICY TOP</div></section><aside id=side>SIDE</aside></div><footer>PAGE BOTTOM</footer></main><script>setInterval(()=>document.querySelector("#clock").textContent=String(Date.now()),200);</script>');
+  return;
+ }
+ if(route==='/nested-pane'){
+  res.setHeader('Content-Type','text/html');
+  res.end('<!doctype html><style>html,body{margin:0}#space{height:100px}#outer{margin-left:100px;width:600px;height:300px;overflow:auto}#lead{height:50px;background:#abcdef}#policy{width:550px;height:250px;max-height:250px!important;overflow:auto}#data{width:550px;height:3500px;background:linear-gradient(red,blue)}footer{height:100px;background:lime}#carousel{height:80px;overflow:hidden}#slide{height:500px;background:#123456}textarea{width:200px;height:80px}</style><div id=space></div><div id=outer><div id=lead></div><div id=policy><div id=data>TOP</div></div></div><footer>BOTTOM</footer><div id=carousel><div id=slide></div></div><textarea>'+('not an expanded editor\n'.repeat(80))+'</textarea>');
+  return;
+ }
+ if(route==='/frame-body'){
+  res.setHeader('Content-Type','text/html');res.end('<!doctype html><style>html,body{margin:0}header{height:40px;background:#abcdef}#frame-policy{height:200px;max-height:200px;overflow:auto}#frame-data{height:2400px;width:600px;background:linear-gradient(red,blue)}footer{height:30px;background:#ff00ff}</style><header>FRAME TOP</header><div id=frame-policy><div id=frame-data>DATA</div></div><footer>FRAME BOTTOM</footer>');return;
+ }
+ if(route==='/nested-frame'||route==='/clipped-frame'||route==='/cross-frame'){
+  res.setHeader('Content-Type','text/html');
+  const src=route==='/cross-frame'?'http://localhost:'+server.address().port+'/frame-body':'/frame-body';
+  res.end('<!doctype html><style>html,body{margin:0}#space{height:100px}iframe{display:block;margin-left:100px;width:600px;height:250px;border:0}#frameWrap{height:300px;overflow:hidden}footer{height:100px;background:lime}</style><div id=space></div>'+(route==='/clipped-frame'?'<div id=frameWrap>':'')+'<iframe src="'+src+'"></iframe>'+(route==='/clipped-frame'?'</div>':'')+'<footer>OUTER BOTTOM</footer>');return;
+ }
  const long=route==='/long';
  const height=route==='/tall'?70001:long?35000:3200;
  res.setHeader('Content-Type','text/html');
@@ -71,7 +98,7 @@ async function invoke(page,expectError=false){
  return preview;
 }
 async function pageAt(route){const page=await context.newPage();await page.goto(origin+route);await page.waitForLoadState('load');return page;}
-async function dimensions(preview){return preview.locator('img').evaluateAll(imgs=>imgs.map(i=>[i.naturalWidth,i.naturalHeight]));}
+async function dimensions(preview){return preview.locator('#images img').evaluateAll(imgs=>imgs.map(i=>[i.naturalWidth,i.naturalHeight]));}
 async function save(preview,name,folder){
  await preview.locator('#name').fill(name);await preview.locator('#folder').fill(folder);
  await preview.locator('#save').click();
@@ -100,7 +127,7 @@ async function save(preview,name,folder){
  record('repeat capture detaches debugger; duplicate download preserves original');await repeated.close();
  const longPage=await pageAt('/long'),longPreview=await invoke(longPage);
  assert.deepEqual(await dimensions(longPreview),[[1280,35000]]);
- const samples=await longPreview.locator('img').evaluate(img=>{
+ const samples=await longPreview.locator('#images img').evaluate(img=>{
   const canvas=document.createElement('canvas');canvas.width=1;canvas.height=1;
   const ctx=canvas.getContext('2d',{willReadFrequently:true}),rows=[];
   for(let y=499;y<img.naturalHeight;y+=397){
@@ -136,7 +163,7 @@ async function save(preview,name,folder){
  await gridPage.evaluate(()=>scrollTo({left:321,top:455,behavior:'instant'}));
  const grid=await invoke(gridPage);
  assert.deepEqual(await dimensions(grid),[[2203,2407]]);
- const gridSamples=await grid.locator('img').evaluate(img=>{
+ const gridSamples=await grid.locator('#images img').evaluate(img=>{
   const c=document.createElement('canvas');c.width=1;c.height=1;const g=c.getContext('2d',{willReadFrequently:true});
   const sample=(x,y)=>{g.drawImage(img,x,y,1,1,0,0,1,1);return Array.from(g.getImageData(0,0,1,1).data).slice(0,3);};
   const points=[];for(let y=61;y<2407;y+=31)for(let x=211;x<2203;x+=37){
@@ -157,6 +184,55 @@ async function save(preview,name,folder){
  assert.equal(await growingPage.evaluate(()=>getComputedStyle(document.querySelector('#sticky')).position),'sticky');
  assert.equal(await growingPage.evaluate(()=>getComputedStyle(document.querySelector('#fixed')).opacity),'0.8');
  record('growing page rejects without partial output and restores sticky state');await growing.close();
+ if(process.env.GULIR_NESTED==='1'||process.argv.includes('--nested')){
+  async function sample(preview,points){return preview.locator('#images img').evaluate((img,pts)=>{const c=document.createElement('canvas');c.width=1;c.height=1;const g=c.getContext('2d',{willReadFrequently:true});return pts.map(([x,y])=>{g.clearRect(0,0,1,1);g.drawImage(img,x,y,1,1,0,0,1,1);return Array.from(g.getImageData(0,0,1,1).data).slice(0,3);});},points);}
+  const gradient=(rgb,y,total,label)=>{const blue=255*(y+0.5)/total;assert.ok(Math.abs(rgb[0]-(255-blue))<=3&&rgb[1]===0&&Math.abs(rgb[2]-blue)<=3,label+' '+rgb);};
+  const app=await pageAt('/nested-app');
+  await app.evaluate(()=>{document.querySelector('#shell').scrollTop=75;document.querySelector('#policy').scrollTop=300;});
+  const appBefore=await app.evaluate(()=>['html','body','#shell','#policy'].map(sel=>{const e=document.querySelector(sel);return {sel,style:e.getAttribute('style'),x:e.scrollLeft,y:e.scrollTop};}));
+  const appShot=await invoke(app);assert.equal((await dimensions(appShot)).length,1);assert.ok((await dimensions(appShot))[0][1]>=2716);
+  const appPixels=await sample(appShot,[[200,356],[200,1256],[200,2555],[200,2680]]);
+  gradient(appPixels[0],100,2400,'app top');gradient(appPixels[1],1000,2400,'app middle');gradient(appPixels[2],2299,2400,'app bottom');assert.deepEqual(appPixels[3],[0,255,0]);
+  const appAfter=await app.evaluate(()=>['html','body','#shell','#policy'].map(sel=>{const e=document.querySelector(sel);return {sel,style:e.getAttribute('style'),x:e.scrollLeft,y:e.scrollTop};}));
+  assert.deepEqual(appAfter,appBefore,'restore fixed app shell, nested pane, styles and offsets');
+  assert.match(await appShot.locator('#summary').innerText(),/area scroll diperluas/);
+  const appFile=await save(appShot,'nested-app','Screenshots/Test');assert.equal(path.basename(appFile),'nested-app.png');
+  record('fixed viewport app shell + nested pane: full bottom, one PNG, exact restoration');await appShot.close();
+
+  const pane=await pageAt('/nested-pane');await pane.evaluate(()=>{document.querySelector('#outer').scrollTop=40;document.querySelector('#policy').scrollTop=250;});
+  const paneBefore=await pane.evaluate(()=>['#outer','#policy','#carousel','textarea'].map(sel=>{const e=document.querySelector(sel);return {sel,style:e.getAttribute('style'),h:e.clientHeight,y:e.scrollTop};}));
+  const paneShot=await invoke(pane);assert.ok((await dimensions(paneShot))[0][1]>=3750);
+  const panePixels=await sample(paneShot,[[200,250],[200,2150],[200,3649],[200,3690]]);
+  gradient(panePixels[0],100,3500,'pane top');gradient(panePixels[1],2000,3500,'pane middle');gradient(panePixels[2],3499,3500,'pane bottom');assert.deepEqual(panePixels[3],[0,255,0]);
+  const paneAfter=await pane.evaluate(()=>['#outer','#policy','#carousel','textarea'].map(sel=>{const e=document.querySelector(sel);return {sel,style:e.getAttribute('style'),h:e.clientHeight,y:e.scrollTop};}));
+  assert.deepEqual(paneAfter,paneBefore);record('nested overflow panes expand bottom-up; hidden carousel/editor stay bounded; restoration exact');await paneShot.close();
+
+  const framed=await pageAt('/nested-frame');await framed.frameLocator('iframe').locator('#frame-policy').evaluate(el=>el.scrollTop=100);
+  const frameBefore=await framed.evaluate(()=>{const e=document.querySelector('iframe'),p=e.contentDocument.querySelector('#frame-policy');return {style:e.getAttribute('style'),h:e.clientHeight,childStyle:p.getAttribute('style'),scroll:p.scrollTop};});
+  const frameShot=await invoke(framed);assert.ok((await dimensions(frameShot))[0][1]>=2670);
+  const framePixels=await sample(frameShot,[[200,240],[200,1940],[200,2539],[200,2555],[200,2610]]);
+  gradient(framePixels[0],100,2400,'frame top');gradient(framePixels[1],1800,2400,'frame middle');gradient(framePixels[2],2399,2400,'frame bottom');assert.deepEqual(framePixels[3],[255,0,255]);assert.deepEqual(framePixels[4],[0,255,0]);
+  const frameAfter=await framed.evaluate(()=>{const e=document.querySelector('iframe'),p=e.contentDocument.querySelector('#frame-policy');return {style:e.getAttribute('style'),h:e.clientHeight,childStyle:p.getAttribute('style'),scroll:p.scrollTop};});
+  assert.deepEqual(frameAfter,frameBefore);record('same-origin iframe + inner scroller: entire frame and outer footer in one PNG, restored');await frameShot.close();
+
+  const bodyPage=await pageAt('/nested-body');await bodyPage.evaluate(()=>document.body.scrollTop=200);
+  const bodyBefore=await bodyPage.evaluate(()=>({style:document.body.getAttribute('style'),scroll:document.body.scrollTop}));
+  const bodyShot=await invoke(bodyPage);assert.ok((await dimensions(bodyShot))[0][1]>=2700);const bodyPixels=await sample(bodyShot,[[500,100],[500,2599],[500,2650]]);
+  gradient(bodyPixels[0],100,2600,'body top');gradient(bodyPixels[1],2599,2600,'body bottom');assert.deepEqual(bodyPixels[2],[0,255,0]);assert.deepEqual(await bodyPage.evaluate(()=>({style:document.body.getAttribute('style'),scroll:document.body.scrollTop})),bodyBefore);
+  record('inner body scrollbar under clipped html expands fully and restores');await bodyShot.close();
+
+  const offscreen=await pageAt('/nested-offscreen');await offscreen.evaluate(()=>document.querySelector('#outer').scrollTop=1000);
+  const offShot=await invoke(offscreen);assert.ok((await dimensions(offShot))[0][1]>=3100);const offPixel=await sample(offShot,[[200,1499]]);gradient(offPixel[0],1399,1400,'initially offscreen inner bottom');assert.equal(await offscreen.evaluate(()=>document.querySelector('#outer').scrollTop),1000);record('initially scrolled parent does not hide nested-scroll discovery');await offShot.close();
+
+  const clipped=await pageAt('/clipped-frame'),clippedShot=await invoke(clipped);assert.ok((await dimensions(clippedShot))[0][1]>=2670);const clippedPixel=await sample(clippedShot,[[200,2555],[200,2610]]);assert.deepEqual(clippedPixel,[[255,0,255],[0,255,0]]);assert.equal(await clipped.evaluate(()=>document.querySelector('#frameWrap').clientHeight),300);record('same-origin iframe expands through clipped ancestor and restores it');await clippedShot.close();
+
+  const horizontal=await pageAt('/nested-horizontal');await horizontal.evaluate(()=>document.querySelector('#horizontal').scrollLeft=80);
+  const horizontalShot=await invoke(horizontal,true);assert.match(await horizontalShot.locator('#status').innerText(),/horizontal|mendatar/i);assert.equal(await horizontal.evaluate(()=>document.querySelector('#horizontal').scrollLeft),80);record('unsupported horizontal inner overflow fails explicitly and restores offset');await horizontalShot.close();
+
+  const crossed=await pageAt('/cross-frame'),crossShot=await invoke(crossed);
+  assert.ok((await crossShot.locator('#warnings').innerText()).trim(),'cross-origin frame limitation must be visible');
+  record('cross-origin iframe remains untouched with explicit visible coverage warning');await crossShot.close();
+ }
  const moving=await pageAt('/animated'),animated=await invoke(moving);
  assert.deepEqual(await dimensions(animated),[[1280,3200]]);await animated.close();
  await moving.evaluate(()=>window.stopFixtureAnimation());
@@ -198,7 +274,7 @@ async function save(preview,name,folder){
   await context.close();context=null;await launch('tall');
   const tall=await invoke(await pageAt('/tall'));
   assert.deepEqual(await dimensions(tall),[[1280,70001]]);
-  const tallSamples=await tall.locator('img').evaluate(img=>{
+  const tallSamples=await tall.locator('#images img').evaluate(img=>{
    const c=document.createElement('canvas');c.width=1;c.height=1;const g=c.getContext('2d',{willReadFrequently:true}),out=[];
    for(const y of [499,16383,32767,32768,65534,65535,65536,69999]){g.drawImage(img,500,y,1,1,0,0,1,1);out.push({y,rgb:Array.from(g.getImageData(0,0,1,1).data).slice(0,3)});}return out;
   });

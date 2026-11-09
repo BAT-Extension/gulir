@@ -6,6 +6,7 @@ import {captureDimensions} from '../extension/core.js';
 const source=(await fs.readFile(new URL('../extension/capture.js',import.meta.url),'utf8'))
  .replace("import {encodePng} from './png.js';",'const encodePng=(args)=>globalThis.testEncode(args);')
  .replace("import {captureDimensions} from './core.js';",'const {captureDimensions}=globalThis.testCore;')
+ .replace("import {expandScrollableContent} from './expand.js';",'const expandScrollableContent=()=>{globalThis.__gulirExpansion={check:()=>({ok:true}),restore:()=>({restored:true})};return {ok:true,expandedContainers:0,expandedFrames:0,warnings:[]};};')
  .replace('const wait = ms => new Promise(resolve=>setTimeout(resolve,ms));','const wait = async()=>{};');
 globalThis.testCore={captureDimensions};
 const {captureSinglePng}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));

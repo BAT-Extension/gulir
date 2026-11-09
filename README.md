@@ -1,4 +1,4 @@
-# Gulir 1.1.0
+# Gulir 1.2.0 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -13,7 +13,7 @@ Proyek: /home/putrimak/www/extension/gulir
 4. Jika versi lama sudah dimuat, klik Reload pada kartu Gulir.
 5. Buka chrome://extensions/shortcuts. Pastikan Alt+S terpasang; pilih tombol lain bila bentrok. F10/F11 tidak didukung Commands API Chrome.
 
-Extension belum dipasang ke profil Chrome pribadi pengguna. Aktivasi Alt+S pada Chrome desktop tetap perlu diperiksa langsung.
+Gulir 1.2.0 sudah ditemukan terpasang di Chrome MSI dan Alt+S nyata telah membuka preview. Namun capture dashboard JNE masih gagal aman karena tinggi panel; status rilis publik tetap tertahan sampai verifikasi ulang.
 
 ## Pemakaian
 Buka halaman web dan tunggu muat selesai. Untuk konten lazy-load, scroll dahulu sampai bawah dan tunggu gambar muncul. Tekan Alt+S atau klik ikon Gulir. Jangan berpindah tab, menggulir, atau mengubah zoom selama pengambilan. Halaman akan terlihat bergulir, lalu posisi semula dipulihkan.
@@ -38,7 +38,7 @@ Jika batas tercapai atau pengambilan gagal, Gulir menampilkan kesalahan. **Tidak
 ## Batasan isi halaman
 Ini pengambilan berurutan, bukan snapshot seluruh halaman pada satu waktu. Animasi/video dapat berbeda antarbagian. Lazy-load, infinite scroll, dan halaman virtualized sebaiknya dimuat/stabil terlebih dahulu. Perubahan ukuran halaman, navigasi, zoom, atau tab yang tidak aktif membatalkan hasil.
 
-Panel fixed pada viewport pertama dipertahankan sekali, termasuk bagian bawah/kanan; sticky ditempatkan pada alur dokumen selama capture. Properti sementara dan posisi gulir dipulihkan. Halaman dapat menjalankan efek samping JavaScript akibat scroll yang tidak bisa dibatalkan. Closed shadow DOM, iframe lintas origin, area scroll di dalam elemen/iframe, konten terlindungi, dan overflow berkoordinat negatif memiliki keterbatasan; area scroll di dalam halaman tidak diperluas.
+Panel fixed pada viewport pertama dipertahankan sekali, termasuk bagian bawah/kanan; sticky ditempatkan pada alur dokumen selama capture. Properti sementara dan posisi gulir dipulihkan. Halaman dapat menjalankan efek samping JavaScript akibat scroll yang tidak bisa dibatalkan. Panel gulir vertikal dan iframe same-origin yang didukung diperluas sementara. Nested horizontal scroll dan daftar virtual ditolak. Iframe lintas-origin hanya menyertakan area yang terlihat dengan peringatan. Closed shadow DOM, konten terlindungi, dan overflow berkoordinat negatif memiliki keterbatasan. Halaman dinamis yang tetap terpotong dibatalkan, bukan dianggap berhasil.
 
 Jika koneksi browser putus atau pemulihan gagal, pesan kesalahan memberi tahu pengguna. Ada pemulihan saat pagehide dan watchdog 5 menit, tetapi tab yang hang dapat menunda timer maupun perintah browser. Muat ulang halaman jika tampilannya berubah.
 
@@ -67,3 +67,6 @@ https://developer.chrome.com/docs/extensions/reference/api/commands
 https://developer.chrome.com/docs/extensions/reference/api/debugger
 https://developer.chrome.com/docs/extensions/reference/api/downloads
 https://chromedevtools.github.io/devtools-protocol/tot/Page/
+
+## Persiapan publikasi
+Lihat `store/READINESS.md`, `store/listing-id.md` dan `store/privacy-policy-draft.md`. ZIP dalam `dist/` adalah kandidat pengujian, bukan bukti persetujuan Chrome Web Store. Jangan menggunakan screenshot JNE atau data pribadi sebagai aset toko.

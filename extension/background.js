@@ -19,7 +19,7 @@ export async function capture(tab) {
     await chrome.debugger.attach(target, '1.3'); attached = true;
     const send = (method,params={}) => chrome.debugger.sendCommand(target,method,params);
     const result=await captureSinglePng(send,()=>chrome.tabs.getZoom(tab.id));
-    record.width=result.width;record.height=result.height;record.parts=[result.blob];
+    record.width=result.width;record.height=result.height;record.parts=[result.blob];record.captureInfo=result.captureInfo;
   } catch (e) {
     record.parts=[];
     record.error = 'Screenshot gagal. ' + e.message + ' Jika DevTools terbuka, tutup dahulu. Izin atau kebijakan Chrome mungkin membatasi akses.';
