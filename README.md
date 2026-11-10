@@ -1,4 +1,4 @@
-# Gulir 1.2.9 — release candidate
+# Gulir 1.2.10 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -62,6 +62,7 @@ Screenshot sementara disimpan pada IndexedDB lokal extension. Capture lebih dari
 - GULIR_STRESS=1 menambahkan canvas 20MP.
 - GULIR_CHROMIUM_EXECUTABLE memilih executable Chrome lain.
 - GULIR_HEADED=1 membuka jendela browser uji terlihat.
+- npm run test:browser:complexity menguji halaman panel padat di bawah batas, capture berulang, penolakan batas DOM asli, serta pemulihan halaman.
 - npm run test:browser:location menguji tampilan lokasi, nama aktual/sufiks duplikat, izin folder, pembatalan, dan riwayat simpan.
 - npm run test:browser:close menguji simpan/countdown, beberapa jendela, preview dalam tab biasa, preview terakhir, dan expiry bersamaan. Jalankan dengan GULIR_HEADED=1 untuk pengujian jendela grafis terisolasi.
 
@@ -122,3 +123,10 @@ Laporan pengguna bahwa Chrome masih ikut tertutup membuat jaminan 1.2.6 tidak me
 - Izin folder diperiksa tanpa meminta izin baru saat membuka preview. Jika perlu, konfirmasi/pemilihan folder tetap dilakukan hanya ketika pengguna menyimpan.
 - Riwayat lokasi diperbarui setelah file selesai ditulis. Pembatalan atau kegagalan tidak mengganti lokasi sukses sebelumnya. Kegagalan pencatatan riwayat tidak mengulang penyimpanan PNG yang sudah berhasil.
 - Muat ulang extension dan gunakan preview baru berlabel GULIR 1.2.9. Perilaku penutupan aman 1.2.8 tetap dipertahankan.
+
+### Perhitungan panel 1.2.10
+- Jumlah elemen halaman tidak lagi bertambah setiap kali anak panel diperiksa ulang. Panel bertingkat di bawah batas 15.000 elemen tidak ditolak hanya karena hitungan ganda.
+- Pemeriksaan daftar virtual tetap dibatasi terpisah hingga 60.000 kunjungan. Batas waktu persiapan, ukuran gambar, daftar virtual, clipping, dan pemulihan halaman tetap berlaku.
+- Error batas memuat kode PANEL_NODES atau PANEL_WORK beserta hitungan saja, tanpa isi/URL halaman. Petunjuk DevTools/izin Chrome hanya ditampilkan jika koneksi debugger gagal.
+- Fixture sintetis 8.828 elemen mereproduksi penolakan kode lama. Versi ini menghasilkan satu PNG utuh dua kali, dengan piksel bawah dan pemulihan panel terverifikasi. Halaman JNE asli masih perlu dicoba oleh pengguna.
+- Reload extension dan gunakan preview baru berlabel GULIR 1.2.10.

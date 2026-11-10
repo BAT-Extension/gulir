@@ -27,6 +27,8 @@ for(const scenario of ['success','denied','capture-fail','restricted','loading']
   assert.equal(records.length,1);assert.equal(calls.filter(x=>x==='preview').length,1);
   if(scenario==='success'){assert.equal(records[0].parts.length,1);assert.equal(records[0].height,35000);}
   else{assert.equal(records[0].parts.length,0);assert.match(records[0].error,/Screenshot gagal/);}
+  if(scenario==='denied')assert.match(records[0].error,/DevTools|kebijakan Chrome/);
+  else if(scenario!=='success')assert.doesNotMatch(records[0].error,/DevTools|kebijakan Chrome/);
   assert.equal(calls.filter(x=>x==='detach').length,['denied','restricted','loading'].includes(scenario)?0:1);
  });
 }

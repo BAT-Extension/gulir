@@ -16,7 +16,7 @@ with zipfile.ZipFile(target) as z:
  assert set(z.namelist())=={p.relative_to(source).as_posix() for p in files}
  assert 'manifest.json' in z.namelist()
  for p in files:assert z.read(p.relative_to(source).as_posix())==p.read_bytes()
-receipt={'file':name,'sha256':hashlib.sha256(target.read_bytes()).hexdigest(),'version':version,'status':'VERIFIED_ARCHIVE_NOT_PUBLICATION_APPROVAL','files':len(files),'known_blocker':'JNE live-page retest pending after verified synthetic classic-scrollbar fix'}
+receipt={'file':name,'sha256':hashlib.sha256(target.read_bytes()).hexdigest(),'version':version,'status':'VERIFIED_ARCHIVE_NOT_PUBLICATION_APPROVAL','files':len(files),'known_blocker':'JNE live-page retest pending; synthetic regressions do not verify every live page'}
 (dest/(name+'.sha256')).write_text(receipt['sha256']+'  '+name+'\n')
 (dest/'package-verification.json').write_text(json.dumps(receipt,indent=2)+'\n')
 print(json.dumps(receipt))

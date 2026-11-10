@@ -16,7 +16,10 @@ export async function expandScrollableContent(options = {}) {
   const expanded = new Set(), expandedFrames = new Set(), inaccessible = new Set(), observers = [];
   const originallyMissingStyle = new Set();
   const changedProperties = new Map(), tracked = new Map(), windows = new Map();
-  let mutationFailure = false, nodeCount = 0, finished = false;
+  // Discovery counts document elements once. Virtual-list inspection may walk
+  // the same descendants for several nested panels; bound that work separately
+  // instead of charging those visits against the document complexity limit.
+  let mutationFailure = false, nodeCount = 0, inspectionCount = 0, finished = false;
   const state = {cleaned: false, warnings: [], restore: null, check: null};
   globalThis[key] = state;
   const result = extra => ({
@@ -157,8 +160,9 @@ export async function expandScrollableContent(options = {}) {
     const elements = [el, ...el.querySelectorAll('*')];
     let positioned = 0, visibleRows = 0, declaredRows = 0;
     for (const at of elements) {
-      if (++nodeCount > limits.nodes * 4) fail('node-limit', 'Halaman terlalu kompleks untuk memperluas panel dengan aman.');
-      if (nodeCount % 100 === 0) assertBudget();
+      if (++inspectionCount > limits.nodes * 4)
+        fail('inspection-limit', 'Pemeriksaan panel bertingkat melebihi batas aman. Tidak ada gambar sebagian yang disimpan. Kode PANEL_WORK: ' + inspectionCount + '/' + limits.nodes * 4 + '.');
+      if (inspectionCount % 100 === 0) assertBudget();
       const hint = String(at.className?.baseVal ?? at.className ?? '') + ' ' + (at.id || '');
       if (/virtualiz|react[-_]?window|cdk-virtual|ag-body-viewport|slick-viewport/i.test(hint)) return true;
       if (['row', 'listitem'].includes(at.getAttribute?.('role'))) visibleRows++;
@@ -265,7 +269,8 @@ export async function expandScrollableContent(options = {}) {
     documents.push(entry);
     const visitRoot = root => {
       for (const el of root.querySelectorAll('*')) {
-        if (++nodeCount > limits.nodes) fail('node-limit', 'Halaman terlalu kompleks untuk memperluas panel dengan aman.');
+        if (++nodeCount > limits.nodes)
+          fail('node-limit', 'Halaman terlalu kompleks untuk memperluas panel dengan aman. Kode PANEL_NODES: ' + nodeCount + '/' + limits.nodes + ' elemen.');
         if (nodeCount % 100 === 0) assertBudget();
         if (el.scrollTop || el.scrollLeft) saveScroll(el);
         if (hiddenOrExcluded(el)) continue;

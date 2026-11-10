@@ -196,6 +196,66 @@ test('DOM count and frame recursion have finite limits', async () => {
   assert.equal((await outer.run({maxFrameDepth: 1})).code, 'frame-depth');
 });
 
+test('panel inspection does not consume the document element budget twice', async () => {
+  const f = fixture(), outer = pane(f, {scrollTop: 17});
+  const inner = outer.append(f.element({height: 100, content: 1000, css: {overflowY: 'auto'}, scrollTop: 23}));
+  for (let i = 0; i < 4; i++) inner.append(f.element({height: 20}));
+  const before = [snapshot(outer), snapshot(inner)];
+  const count = f.doc.querySelectorAll('*').length;
+  const result = await f.run({maxNodes: count});
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.expandedContainers, 2);
+  assert.equal(f.context.__gulirExpansion.check().ok, true);
+  assert.equal(f.context.__gulirExpansion.restore().restored, true);
+  assert.deepEqual([snapshot(outer), snapshot(inner)], before);
+  assert.equal(outer.scrollTop, 17); assert.equal(inner.scrollTop, 23);
+  // Actual document complexity still fails, including after a prior success.
+  const over = await f.run({maxNodes: count - 1});
+  assert.equal(over.code, 'node-limit'); assert.equal(over.restored, true);
+  assert.ok(over.error.includes('PANEL_NODES: ' + count + '/' + (count - 1)));
+});
+
+test('document element budget is shared across same-origin frames and shadow roots', async () => {
+  const f = fixture(), child = fixture({height: 200});
+  const frame = f.doc.body.append(f.element({tag: 'iframe', height: 200}));
+  frame.contentDocument = child.doc;
+  const host = child.doc.body.append(child.element({height: 200}));
+  const inner = child.element({height: 100, content: 900, css: {overflowY: 'auto'}});
+  const shadow = {host, querySelectorAll: () => [inner]};
+  host.shadowRoot = shadow; inner.getRootNode = () => shadow;
+  Object.defineProperty(child.win, 'innerHeight', {get: () => frame.clientHeight});
+  const count = f.doc.querySelectorAll('*').length + child.doc.querySelectorAll('*').length + 1;
+  const result = await f.run({maxNodes: count});
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.expandedContainers, 1);
+  assert.equal(f.context.__gulirExpansion.restore().restored, true);
+  assert.equal((await f.run({maxNodes: count - 1})).code, 'node-limit');
+});
+
+test('repeated nested panel inspections still have a separate finite work budget', async () => {
+  const f = fixture();
+  let parent = f.doc.body;
+  for (let i = 0; i < 12; i++) {
+    parent = parent.append(f.element({height: 200, content: 1000, css: {overflowY: 'auto'}}));
+  }
+  const result = await f.run({maxNodes: f.doc.querySelectorAll('*').length});
+  assert.equal(result.ok, false); assert.equal(result.code, 'inspection-limit');
+  assert.match(result.error, /PANEL_WORK: 57\/56/);
+  assert.equal(result.restored, true); assert.equal(f.context.__gulirExpansion, undefined);
+});
+
+test('separate inspection budget still enforces preparation time and restores fixed panels', async () => {
+  const f = fixture(), el = pane(f, {css: {position: 'fixed', overflowY: 'auto'}, scrollTop: 15});
+  for (let i = 0; i < 110; i++) el.append(f.element({height: 2}));
+  const before = snapshot(el);
+  let ticks = 0;
+  f.context.Date = {now: () => ++ticks * 100};
+  const result = await f.run({maxPrepareMs: 150});
+  assert.equal(result.ok, false); assert.equal(result.code, 'prepare-timeout');
+  assert.equal(result.restored, true); assert.equal(snapshot(el), before);
+  assert.equal(el.scrollTop, 15); assert.equal(f.context.__gulirExpansion, undefined);
+});
+
 test('post-expansion content, height, navigation and scroll changes fail validation', async () => {
   for (const mode of ['mutation', 'height', 'vertical-scroll', 'horizontal-scroll']) {
     const f = fixture(), el = pane(f);

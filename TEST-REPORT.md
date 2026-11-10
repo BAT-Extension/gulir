@@ -155,3 +155,13 @@ Added native Save File Picker path independent of download routing, with suggest
 
 - Final full+nested evidence: gulir-browser-aZlQDS/report.json. Two independent normal windows and all their tabs survive successful save/countdown/error expiry. Last-tab timer, direct helper and saved-file closure all leave the sole preview open. Generated and edited filenames are exact, collision suffix preserves originals.
 - In a disposable profile the legacy window.close removed the sole preview window; automation connection was still alive immediately afterward. Entire Chrome process exit is not proven.
+
+## 1.2.10 panel complexity accounting (2026-11-10)
+- Root cause reproduced: discovery and virtual-list checks shared nodeCount, so revisiting nested descendants could exhaust the 15,000-document-element budget on a smaller page. The fix separates discovery (15,000) from inspection work (60,000) without disabling the time, dimensions, clipping, virtualization, or restore guards.
+- Unit: 101/101 passed on cloud and MSI. Added exact discovery-boundary, shared iframe/shadow-root counting, nested inspection exhaustion, timeout restoration, and contextual debugger-error coverage.
+- Real Chromium, disposable MSI profile and synthetic loopback fixture: old expand.js rejects an 8,828-element nested page with the reported complexity error. Candidate captures the same fixture twice as one 1280x1880 PNG; top/middle/final green panel pixels and exact original panel geometry/styles/scroll pass.
+- A genuinely over-limit synthetic page still fails at PANEL_NODES: 15001/15000, produces zero preview images, omits unrelated DevTools guidance, and restores original panel state.
+- Four classic 15px scrollbar browser variants pass: border-box/content-box, plain/decorated, last pixels, late-growth refusal, exact restoration.
+- Source hashes on tested MSI copy match the final cloud source: expand.js d964c49e17108cd8c7488c3f12540f1df66c9adb06891cd094cce72863e54818; background.js 96ec358539954a188afa125672190187e03b879012c172ef908966f9874dd2fc; tests/browser.cjs 2afd7d3e926b114f8dc66d3a189654c46ec80325aab683d0c5d882f3f4123831.
+- Evidence on MSI: /tmp/gulir-panel-qa.SJBdE9/{unit.log,complexity-before.log,complexity-after.log,scrollbar.log}; final browser report /tmp/gulir-browser-FnN8Wi/report.json. Original checkout, user Chrome, Ojara, and Docker were not changed.
+- Limitations: focused browser regression and unit suite only; no full browser suite rerun or authenticated live JNE retest. The user's screenshot was inspected privately and never used as a fixture or publication asset. Cloud Chromium launch was unavailable due to local-socket restrictions; isolated MSI checks supplied the browser verification.

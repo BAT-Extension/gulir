@@ -17,6 +17,12 @@ const report={artifactDirectory:work,executablePath,testOnlyInstrumentation:true
 const record=(name,status='PASSED',detail)=>{report.checks.push({name,status,detail});console.log(status+' '+name+(detail?': '+detail:''));};
 const server=http.createServer((req,res)=>{
  const route=new URL(req.url,'http://localhost').pathname;
+ if(route==='/dense-nested'||route==='/dense-over-limit'){
+  res.setHeader('Content-Type','text/html');
+  const row='<div class="row">'+('<span></span>'.repeat(20))+'</div>';
+  res.end('<!doctype html><style>html,body{margin:0}#outer{width:600px;height:300px;overflow:auto}#inner{height:200px;overflow:auto}.row{height:4px;display:flex}.row span{display:block;width:20px;height:4px;background:rgb(0,128,255)}footer{height:40px;background:lime}#tail{height:160px}</style><div id="outer"><div id="inner">'+row.repeat(route==='/dense-over-limit'?720:420)+'<footer></footer></div><div id="tail"></div></div>');
+  return;
+ }
  if(route==='/entropy'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><style>html,body{margin:0;width:4000px;height:5000px}canvas{display:block}</style><canvas width=4000 height=5000></canvas><script>const c=document.querySelector("canvas").getContext("2d"),im=c.createImageData(4000,5000);let seed=123456789;for(let i=0;i<im.data.length;i+=4){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;im.data[i]=seed&255;im.data[i+1]=(seed>>>8)&255;im.data[i+2]=(seed>>>16)&255;im.data[i+3]=255;}c.putImageData(im,0,0);</script>');return;}
  if(route==='/grid'||route==='/growing'||route==='/lazy-growth'){
   res.setHeader('Content-Type','text/html');
@@ -149,9 +155,43 @@ async function clockedPreview(page){
  const preview=await invoke(page);await preview.clock.install();await preview.clock.pauseAt(new Date());await preview.reload();
  await preview.waitForFunction(()=>!document.querySelector('#save').disabled);return preview;
 }
+async function denseRegression(){
+  async function sample(preview,points){return preview.locator('#images img').evaluate((img,pts)=>{const c=document.createElement('canvas');c.width=1;c.height=1;const g=c.getContext('2d',{willReadFrequently:true});return pts.map(([x,y])=>{g.clearRect(0,0,1,1);g.drawImage(img,x,y,1,1,0,0,1,1);return Array.from(g.getImageData(0,0,1,1).data).slice(0,3);});},points);}
+  const dense=await pageAt('/dense-nested');
+  await dense.evaluate(()=>{document.querySelector('#outer').scrollTop=23;document.querySelector('#inner').scrollTop=47;});
+  const denseSnapshot=()=>dense.evaluate(()=>['html','body','#outer','#inner'].map(sel=>{const e=document.querySelector(sel);return {style:e.getAttribute('style'),x:e.scrollLeft,y:e.scrollTop,h:sel==='html'?null:e.clientHeight};}));
+  const denseBefore=await denseSnapshot();
+  const denseNodes=await dense.evaluate(()=>document.querySelectorAll('*').length);
+  assert.ok(denseNodes>8000&&denseNodes<15000,'synthetic dense page stays below the unchanged document limit');
+  for(let attempt=0;attempt<2;attempt++){
+   const shot=await invoke(dense);
+   assert.deepEqual(await dimensions(shot),[[1280,1880]]);
+   assert.deepEqual(await sample(shot,[[100,1],[100,1600],[100,1690],[100,1719]]),[[0,128,255],[0,128,255],[0,255,0],[0,255,0]]);
+   assert.deepEqual(await denseSnapshot(),denseBefore,'dense nested panels restore after each capture');
+   await shot.close();
+  }
+  record('dense '+denseNodes+'-element nested page: repeated one-PNG capture includes final panel pixels and restores styles/scroll');
+  const over=await pageAt('/dense-over-limit');
+  await over.evaluate(()=>{document.querySelector('#outer').scrollTop=23;document.querySelector('#inner').scrollTop=47;});
+  const overSnapshot=()=>over.evaluate(()=>['#outer','#inner'].map(sel=>{const e=document.querySelector(sel);return {style:e.getAttribute('style'),y:e.scrollTop,h:e.clientHeight};}));
+  const overBefore=await overSnapshot(),rejected=await invoke(over,true);
+  assert.match(await rejected.locator('#status').innerText(),/PANEL_NODES: 15001\/15000/);
+  assert.doesNotMatch(await rejected.locator('#status').innerText(),/DevTools|kebijakan Chrome/);
+  assert.equal(await rejected.locator('#images img').count(),0);
+  assert.deepEqual(await overSnapshot(),overBefore);
+  await rejected.close();
+  record('actual DOM limit rejects with count-only diagnostic, no partial image, and exact panel restoration');
+
+}
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));origin='http://127.0.0.1:'+server.address().port;
  const downloads=await launch('standard');
+ if(process.argv.includes('--complexity')){
+  await denseRegression();
+  report.status='FOCUSED_COMPLEXITY_PASSED';
+  report.limitations.push('Focused synthetic nested-panel capture only; no live JNE or full browser suite.');
+  return;
+ }
  const page=await pageAt('/short');
  const secondWindowPage=context.waitForEvent('page');
  await worker.evaluate(url=>chrome.windows.create({url,type:'normal'}),origin+'/short?survivor');
@@ -335,6 +375,7 @@ async function clockedPreview(page){
  record('growing page rejects without partial output and restores sticky state');await growing.close();
  if(process.env.GULIR_NESTED==='1'||process.argv.includes('--nested')){
   async function sample(preview,points){return preview.locator('#images img').evaluate((img,pts)=>{const c=document.createElement('canvas');c.width=1;c.height=1;const g=c.getContext('2d',{willReadFrequently:true});return pts.map(([x,y])=>{g.clearRect(0,0,1,1);g.drawImage(img,x,y,1,1,0,0,1,1);return Array.from(g.getImageData(0,0,1,1).data).slice(0,3);});},points);}
+  await denseRegression();
   const gradient=(rgb,y,total,label)=>{const blue=255*(y+0.5)/total;assert.ok(Math.abs(rgb[0]-(255-blue))<=3&&rgb[1]===0&&Math.abs(rgb[2]-blue)<=3,label+' '+rgb);};
   const app=await pageAt('/nested-app');
   await app.evaluate(()=>{document.querySelector('#shell').scrollTop=75;document.querySelector('#policy').scrollTop=300;});

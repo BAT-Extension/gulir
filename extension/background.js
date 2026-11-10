@@ -9,7 +9,7 @@ async function preview(id) {
 export async function capture(tab) {
   if (busy) return;
   busy = true;
-  let attached = false;
+  let attached = false, attaching = false;
   const target = {tabId:tab.id};
   const id = crypto.randomUUID();
   const record = {id,created:Date.now(),name:autoName(tab.title || 'screenshot'),parts:[]};
@@ -17,13 +17,15 @@ export async function capture(tab) {
     if (!allowedUrl(tab.url)) throw Error('Tab ini tidak dapat diambil. Buka halaman http/https biasa; halaman Chrome, Web Store, PDF internal, dan file lokal tidak didukung.');
     if (tab.status === 'loading') throw Error('Halaman masih dimuat. Tunggu selesai lalu tekan Alt+S lagi.');
     await chrome.action.setBadgeText({text:'…'});
-    await chrome.debugger.attach(target, '1.3'); attached = true;
+    attaching = true;
+    await chrome.debugger.attach(target, '1.3'); attached = true; attaching = false;
     const send = (method,params={}) => chrome.debugger.sendCommand(target,method,params);
     const result=await captureSinglePng(send,()=>chrome.tabs.getZoom(tab.id));
     record.width=result.width;record.height=result.height;record.parts=[result.blob];record.captureInfo=result.captureInfo;
   } catch (e) {
     record.parts=[];
-    record.error = 'Screenshot gagal. ' + e.message + ' Jika DevTools terbuka, tutup dahulu. Izin atau kebijakan Chrome mungkin membatasi akses.';
+    record.error = 'Screenshot gagal. ' + e.message + (attaching
+      ? ' Jika DevTools terbuka, tutup dahulu. Izin atau kebijakan Chrome mungkin membatasi akses.' : '');
   } finally {
     if (attached) await chrome.debugger.detach(target).catch(()=>{});
     await chrome.action.setBadgeText({text:''}).catch(()=>{});
