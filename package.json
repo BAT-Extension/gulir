@@ -10,6 +10,7 @@
     "test:browser:scrollbar": "node tests/scrollbar.browser.cjs",
     "test:browser:public": "node tests/public-page.browser.cjs",
     "test:browser:scrolled-header": "node tests/scrolled-header.browser.cjs",
+    "test:browser:horizontal": "node tests/browser.cjs --horizontal",
     "test:browser:complexity": "node tests/browser.cjs --complexity"
   }
 }

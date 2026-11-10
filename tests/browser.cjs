@@ -48,6 +48,15 @@ const server=http.createServer((req,res)=>{
  if(route==='/nested-offscreen'){
   res.setHeader('Content-Type','text/html');res.end('<!doctype html><style>html,body{margin:0}#space{height:100px}#outer{width:600px;height:300px;overflow:auto}#inner{height:200px;overflow:auto}#inner-data{height:1400px;background:linear-gradient(red,blue)}#tail{height:1600px;background:lime}</style><div id=space></div><div id=outer><div id=inner><div id=inner-data>INNER</div></div><div id=tail>TAIL</div></div>');return;
  }
+ if(route==='/horizontal-grid'||route==='/horizontal-frame-body'||route==='/horizontal-table'){
+  res.setHeader('Content-Type','text/html');
+  const table=route==='/horizontal-table';
+  res.end('<!doctype html><style>html,body{margin:0}table{border-collapse:collapse;width:1000px}td{padding:0}td:first-child{width:700px}td:last-child{width:300px;background:magenta}#clip{width:560px;height:270px;overflow:hidden}'+(table?'table#clip{width:1000px;height:270px;overflow:visible}':'')+'#panel{box-sizing:content-box;width:500px;height:200px;padding:5px;border:3px solid black;overflow:auto}canvas{display:block}footer{height:35px;background:lime}</style>'+(table?'<table id="clip"><tr><td>':'<div id="clip">')+'<div id="panel"><canvas width="2203" height="1407"></canvas></div>'+(table?'</td><td>ATTACHMENT</td></tr></table>':'</div>')+'<footer></footer><script>const g=document.querySelector("canvas").getContext("2d"),im=g.createImageData(2203,1407);for(let y=0;y<1407;y++)for(let x=0;x<2203;x++){const i=(y*2203+x)*4;im.data[i]=x%251;im.data[i+1]=y%251;im.data[i+2]=(Math.floor(x/251)+Math.floor(y/251)*9)%251;im.data[i+3]=255;}g.putImageData(im,0,0);</script>');return;
+ }
+ if(route==='/horizontal-frame'){
+  res.setHeader('Content-Type','text/html');
+  res.end('<!doctype html><style>html,body{margin:0}#wrap{width:600px;height:300px;overflow:hidden}iframe{display:block;width:600px;height:300px;border:0}footer{height:30px;background:magenta}</style><div id="wrap"><iframe src="/horizontal-frame-body"></iframe></div><footer></footer>');return;
+ }
  if(route==='/nested-horizontal'){
   res.setHeader('Content-Type','text/html');res.end('<!doctype html><style>html,body{margin:0}#horizontal{width:300px;height:200px;overflow:auto}#wide{width:1000px;height:600px;background:linear-gradient(red,blue)}</style><div id=horizontal><div id=wide>WIDE PANEL</div></div>');return;
  }
@@ -81,7 +90,7 @@ async function launch(name,dpr=1){
  fs.mkdirSync(downloads,{recursive:true});fs.mkdirSync(path.join(profile,'Default'),{recursive:true});
  const preferences=path.join(profile,'Default','Preferences');
  if(!fs.existsSync(preferences))fs.writeFileSync(preferences,JSON.stringify({download:{default_directory:downloads,prompt_for_download:false,directory_upgrade:true}}));
- context=await chromium.launchPersistentContext(profile,{executablePath,headless:process.env.GULIR_HEADED!=='1',viewport:null,acceptDownloads:false,args:['--window-size=1280,720','--force-device-scale-factor='+dpr,'--disable-extensions-except='+extension,'--load-extension='+extension]});
+ context=await chromium.launchPersistentContext(profile,{executablePath,headless:process.env.GULIR_HEADED!=='1',ignoreDefaultArgs:process.env.GULIR_CLASSIC_SCROLLBARS==='1'?['--hide-scrollbars']:[],viewport:null,acceptDownloads:false,args:['--window-size=1280,720','--force-device-scale-factor='+dpr,'--disable-extensions-except='+extension,'--load-extension='+extension]});
  context.setDefaultTimeout(15000);
  context.on('page',page=>page.on('download',()=>browserDownloads++));
  // Playwright's allowAndName download interception replaces native filenames.
@@ -227,9 +236,73 @@ async function denseRegression(){
 
 
 }
+async function horizontalRegression(){
+ const sample=(preview,pts)=>preview.locator('#images img').evaluate((img,points)=>{
+  const c=document.createElement('canvas');c.width=c.height=1;const g=c.getContext('2d',{willReadFrequently:true});
+  return points.map(([x,y])=>{g.clearRect(0,0,1,1);g.drawImage(img,x,y,1,1,0,0,1,1);return [...g.getImageData(0,0,1,1).data].slice(0,3);});
+ },pts);
+ for(const route of ['/horizontal-grid','/horizontal-frame','/horizontal-table']){
+  const page=await pageAt(route),frame=route==='/horizontal-frame'?page.frames().find(f=>f!==page.mainFrame()):page;
+  await frame.evaluate(()=>{document.querySelector('#panel').scrollTo(180,150)});
+  const snapshot=()=>frame.evaluate(()=>['#clip','#panel'].map(sel=>{const e=document.querySelector(sel);return {style:e.getAttribute('style'),x:e.scrollLeft,y:e.scrollTop,w:e.clientWidth,h:e.clientHeight}}));
+  const before=await snapshot();
+  for(let repeat=0;repeat<2;repeat++){
+   const shot=await invoke(page),dims=await dimensions(shot);
+   assert.equal(dims.length,1);assert.ok(dims[0][0]>=2219);assert.ok(dims[0][1]>=1458);
+   const points=[[0,0],[1200,650],[2202,1406]].map(([x,y])=>[x+8,y+8]);
+   const expected=[[0,0],[1200,650],[2202,1406]].map(([x,y])=>[x%251,y%251,(Math.floor(x/251)+Math.floor(y/251)*9)%251]);
+   assert.deepEqual(await sample(shot,points),expected,'left, tiled middle and bottom-right pixels');
+   assert.deepEqual(await snapshot(),before,'exact panel styles, geometry and both scroll axes restored');
+   if(route==='/horizontal-table') {
+    assert.deepEqual(await sample(shot,[[2300,100]]),[[255,0,255]],'adjacent table attachment panel stays visible');
+    if(repeat===0)await save(shot,'horizontal-complete');else await shot.close();
+   } else await shot.close();
+  }
+  await page.close();record(route+': repeated complete one-PNG capture, rightmost pixels and exact restoration');
+ }
+ {
+  const page=await pageAt('/horizontal-grid');
+  await page.evaluate(()=>{
+   const clip=document.querySelector('#clip'),aside=document.createElement('aside');
+   clip.style.cssText='width:716px;height:270px;overflow:visible;display:flex';
+   aside.id='aside';aside.style.cssText='width:200px;height:200px;background:magenta;overflow:hidden';clip.append(aside);
+  });
+  const before=await page.locator('#aside').evaluate(e=>({style:e.getAttribute('style'),width:e.getBoundingClientRect().width}));
+  const shot=await invoke(page);assert.deepEqual(await sample(shot,[[2300,100]]),[[255,0,255]]);
+  assert.deepEqual(await page.locator('#aside').evaluate(e=>({style:e.getAttribute('style'),width:e.getBoundingClientRect().width})),before);
+  await shot.close();await page.close();record('flex sidebar preserved without shrinking and original style restored');
+ }
+ for(const kind of ['oversize','virtualized','rtl','late-growth','grid-overlap','shadow-overlap','contents-overlap']){
+  const page=await pageAt('/horizontal-grid');
+  await page.evaluate(kind=>{
+   const panel=document.querySelector('#panel');panel.scrollLeft=50;
+   if(kind.endsWith('-overlap')){
+    const clip=document.querySelector('#clip'),aside=document.createElement('aside');
+    clip.style.cssText='width:600px;height:270px;overflow:visible;display:grid;grid-template-columns:400px 200px';
+    panel.style.width='384px';
+    aside.style.cssText='width:200px;height:200px;background:magenta;overflow:hidden';aside.textContent='VISIBLE SIBLING';clip.append(aside);
+    if(kind==='contents-overlap'){const wrapper=document.createElement('div');wrapper.style.display='contents';aside.replaceWith(wrapper);wrapper.append(aside);}
+    if(kind==='shadow-overlap'){const shadow=clip.attachShadow({mode:'open'});panel.style.cssText='width:400px;height:200px;overflow:auto';shadow.append(panel,aside);}
+   }
+   if(kind==='oversize')panel.firstElementChild.style.width='17000px';
+   if(kind==='virtualized')panel.className='ReactVirtualized__Grid';
+   if(kind==='rtl')panel.style.direction='rtl';
+   if(kind==='late-growth'){panel.firstElementChild.style.height='1407px';addEventListener('scroll',()=>{if(scrollX>100)panel.firstElementChild.style.width='2400px'});}
+  },kind);
+  const before=await page.locator('#panel').evaluate(e=>({style:e.getAttribute('style'),x:e.scrollLeft,y:e.scrollTop,w:e.clientWidth,h:e.clientHeight}));
+  const shot=await invoke(page,true);
+  assert.equal(await shot.locator('#images img').count(),0);
+  assert.match(await shot.locator('#status').innerText(),kind==='oversize'?/batas aman/:kind==='virtualized'?/virtual/:kind==='rtl'?/kanan-ke-kiri/:kind==='late-growth'?/Lebar isi panel|PANEL_HEIGHT/:/menutupi|mempersempit/);
+  assert.deepEqual(await page.locator('#panel').evaluate(e=>({style:e.getAttribute('style'),x:e.scrollLeft,y:e.scrollTop,w:e.clientWidth,h:e.clientHeight})),before);
+  await shot.close();await page.close();record(kind+': no partial PNG and panel restored');
+ }
+}
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));origin='http://127.0.0.1:'+server.address().port;
  const downloads=await launch('standard');
+ if(process.argv.includes('--horizontal')){
+  await horizontalRegression();report.status='FOCUSED_HORIZONTAL_PASSED';report.limitations.push('Synthetic fixtures only, no authenticated live JNE page.');return;
+ }
  if(process.argv.includes('--complexity')){
   await denseRegression();
   report.status='FOCUSED_COMPLEXITY_PASSED';
@@ -461,7 +534,7 @@ async function denseRegression(){
   const clipped=await pageAt('/clipped-frame'),clippedShot=await invoke(clipped);assert.ok((await dimensions(clippedShot))[0][1]>=2670);const clippedPixel=await sample(clippedShot,[[200,2555],[200,2610]]);assert.deepEqual(clippedPixel,[[255,0,255],[0,255,0]]);assert.equal(await clipped.evaluate(()=>document.querySelector('#frameWrap').clientHeight),300);record('same-origin iframe expands through clipped ancestor and restores it');await clippedShot.close();
 
   const horizontal=await pageAt('/nested-horizontal');await horizontal.evaluate(()=>document.querySelector('#horizontal').scrollLeft=80);
-  const horizontalShot=await invoke(horizontal,true);assert.match(await horizontalShot.locator('#status').innerText(),/horizontal|mendatar/i);assert.equal(await horizontal.evaluate(()=>document.querySelector('#horizontal').scrollLeft),80);record('unsupported horizontal inner overflow fails explicitly and restores offset');await horizontalShot.close();
+  const horizontalShot=await invoke(horizontal);assert.equal((await dimensions(horizontalShot)).length,1);assert.deepEqual(await sample(horizontalShot,[[999,599]]),[[0,0,255]]);assert.equal(await horizontal.evaluate(()=>document.querySelector('#horizontal').scrollLeft),80);record('horizontal inner overflow captures rightmost bottom pixel and restores offset');await horizontalShot.close();
 
   const crossed=await pageAt('/cross-frame'),crossShot=await invoke(crossed);
   assert.ok((await crossShot.locator('#warnings').innerText()).trim(),'cross-origin frame limitation must be visible');

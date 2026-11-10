@@ -1,4 +1,4 @@
-# Gulir 1.2.11 — release candidate
+# Gulir 1.2.12 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -43,7 +43,7 @@ Jika batas tercapai atau pengambilan gagal, Gulir menampilkan kesalahan. **Tidak
 ## Batasan isi halaman
 Ini pengambilan berurutan, bukan snapshot seluruh halaman pada satu waktu. Animasi/video dapat berbeda antarbagian. Lazy-load, infinite scroll, dan halaman virtualized sebaiknya dimuat/stabil terlebih dahulu. Perubahan ukuran halaman, navigasi, zoom, atau tab yang tidak aktif membatalkan hasil.
 
-Panel fixed pada viewport pertama dipertahankan sekali, termasuk bagian bawah/kanan; sticky ditempatkan pada alur dokumen selama capture. Properti sementara dan posisi gulir dipulihkan. Halaman dapat menjalankan efek samping JavaScript akibat scroll yang tidak bisa dibatalkan. Panel gulir vertikal dan iframe same-origin yang didukung diperluas sementara. Nested horizontal scroll dan daftar virtual ditolak. Iframe lintas-origin hanya menyertakan area yang terlihat dengan peringatan. Closed shadow DOM, konten terlindungi, dan overflow berkoordinat negatif memiliki keterbatasan. Halaman dinamis yang tetap terpotong dibatalkan, bukan dianggap berhasil.
+Panel fixed pada viewport pertama dipertahankan sekali, termasuk bagian bawah/kanan; sticky ditempatkan pada alur dokumen selama capture. Properti sementara dan posisi gulir dipulihkan. Halaman dapat menjalankan efek samping JavaScript akibat scroll yang tidak bisa dibatalkan. Panel gulir vertikal/horizontal kiri-ke-kanan dan iframe same-origin yang didukung diperluas sementara. Panel samping dipertahankan lebarnya. Tata letak yang saling menutup, panel horizontal kanan-ke-kiri, dan daftar virtual ditolak. Iframe lintas-origin hanya menyertakan area yang terlihat dengan peringatan. Closed shadow DOM, konten terlindungi, dan overflow berkoordinat negatif memiliki keterbatasan. Halaman dinamis yang tetap terpotong dibatalkan, bukan dianggap berhasil.
 
 Jika koneksi browser putus atau pemulihan gagal, pesan kesalahan memberi tahu pengguna. Ada pemulihan saat pagehide dan watchdog 5 menit, tetapi tab yang hang dapat menunda timer maupun perintah browser. Muat ulang halaman jika tampilannya berubah.
 
@@ -63,6 +63,7 @@ Screenshot sementara disimpan pada IndexedDB lokal extension. Capture lebih dari
 - GULIR_STRESS=1 menambahkan canvas 20MP.
 - GULIR_CHROMIUM_EXECUTABLE memilih executable Chrome lain.
 - GULIR_HEADED=1 membuka jendela browser uji terlihat.
+- npm run test:browser:horizontal menguji panel lebar, tabel dengan panel samping, flex, iframe, simpan satu PNG, piksel kanan-bawah, dan penolakan overlap. GULIR_CLASSIC_SCROLLBARS=1 mengaktifkan scrollbar klasik pada harness browser.
 - npm run test:browser:complexity menguji halaman panel padat di bawah batas, capture berulang, penolakan batas DOM asli, serta pemulihan halaman.
 - npm run test:browser:location menguji tampilan lokasi, nama aktual/sufiks duplikat, izin folder, pembatalan, dan riwayat simpan.
 - npm run test:browser:close menguji simpan/countdown, beberapa jendela, preview dalam tab biasa, preview terakhir, dan expiry bersamaan. Jalankan dengan GULIR_HEADED=1 untuk pengujian jendela grafis terisolasi.
@@ -138,3 +139,10 @@ Laporan pengguna bahwa Chrome masih ikut tertutup membuat jaminan 1.2.6 tidak me
 - Perubahan struktur saat penelusuran membatalkan capture agar panel tidak terlewat. Perubahan milik situs tidak dibatalkan; hanya gaya/posisi gulir sementara milik Gulir yang dipulihkan.
 - Fixture 15.128 dan 50.408 elemen menghasilkan satu PNG lengkap dengan piksel akhir terverifikasi. Halaman di atas 100.000 elemen dan daftar virtual tetap ditolak tanpa PNG sebagian.
 - Reload extension dan gunakan preview baru berlabel GULIR 1.2.11. Hasil pada halaman JNE asli tetap perlu dicoba oleh pengguna.
+
+### Panel horizontal 1.2.12
+- Panel dengan tabel lebar kini diperluas ke kanan dan bawah, termasuk ancestor yang memotong serta iframe same-origin. Hasil tetap satu PNG, memakai pengambilan viewport bertahap yang sudah ada.
+- Lebar panel lampiran/samping dipertahankan pada tabel otomatis dan flex. Grid atau posisi tetap yang akan menutup konten lain ditolak tanpa PNG sebagian; pemeriksaan juga mencakup shadow root terbuka dan wrapper tanpa kotak.
+- Posisi scroll horizontal/vertikal, ukuran, gaya, prioritas CSS, dan gaya panel samping dipulihkan. Lebar yang tumbuh selama capture ditolak.
+- Batas 16.000 px, 120 juta piksel, waktu persiapan/capture, daftar virtual, dan pemeriksaan clipping tetap berlaku. Panel horizontal kanan-ke-kiri belum didukung.
+- Reload Gulir di chrome://extensions, ambil ulang, dan pastikan preview berlabel GULIR 1.2.12. Pengujian menggunakan fixture sintetis, bukan akses ke halaman JNE login milik pengguna.

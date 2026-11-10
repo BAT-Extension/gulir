@@ -312,11 +312,14 @@ test('duplicate preparation does not overwrite an existing restoration handle', 
   state.restore();
 });
 
-test('horizontal overflow in an independent pane fails explicitly and preserves scroll', async () => {
+test('horizontal overflow expands fully and restores both scroll axes', async () => {
   const f = fixture(), el = pane(f, {scrollWidth: 800, scrollLeft: 80});
   const original = snapshot(el), result = await f.run();
-  assert.equal(result.ok, false); assert.equal(result.code, 'nested-horizontal-overflow');
-  assert.equal(result.restored, true); assert.equal(el.scrollLeft, 80); assert.equal(snapshot(el), original);
+  assert.equal(result.ok, true); assert.equal(el.clientWidth, 800); assert.equal(el.clientHeight, 1000);
+  assert.equal(el.scrollLeft, 0); assert.equal(f.context.__gulirExpansion.check().ok, true);
+  el.scrollLeft = 2; assert.equal(f.context.__gulirExpansion.check().code, 'panel-scrolled'); el.scrollLeft = 0;
+  assert.equal(f.context.__gulirExpansion.restore().restored, true);
+  assert.equal(el.clientWidth, 400); assert.equal(el.scrollLeft, 80); assert.equal(snapshot(el), original);
 });
 
 test('fixed app shell is normalized reversibly and transformed fixed shells fail safely', async () => {
@@ -452,4 +455,51 @@ test('text-only discovery mutations do not abort a stable panel', async () => {
   };
   assert.equal((await f.run()).ok, true);
   assert.equal(f.context.__gulirExpansion.restore().restored, true);
+});
+
+test('horizontal-only panel expands without shrinking its height', async () => {
+  const f = fixture(), el = pane(f, {height: 200, content: 100, scrollWidth: 900,
+    css: {overflowX: 'auto', overflowY: 'hidden'}, scrollLeft: 50});
+  assert.equal((await f.run()).ok, true); assert.equal(el.clientWidth, 900); assert.equal(el.clientHeight, 200);
+  assert.equal(f.context.__gulirExpansion.restore().restored, true); assert.equal(el.scrollLeft, 50);
+});
+
+test('horizontal clipping ancestors expand and restore their original width', async () => {
+  const f = fixture(), outer = f.doc.body.append(f.element({width: 300, height: 200, scrollWidth: 1100,
+    css: {overflowX: 'hidden'}}));
+  const inner = outer.append(f.element({width: 300, height: 100, content: 900, scrollWidth: 1100,
+    css: {overflowX: 'auto', overflowY: 'auto'}}));
+  assert.equal((await f.run()).ok, true); assert.equal(outer.clientWidth, 1100); assert.equal(inner.clientWidth, 1100);
+  assert.equal(f.context.__gulirExpansion.restore().restored, true);
+  assert.equal(outer.clientWidth, 300); assert.equal(inner.clientWidth, 300);
+});
+
+test('oversized, RTL and virtualized horizontal panels reject with no partial state', async () => {
+  for (const [config, code] of [
+    [{scrollWidth: 16001}, 'expansion-limit'],
+    [{scrollWidth: 900, css: {overflowX: 'auto', direction: 'rtl'}, scrollLeft: -80}, 'rtl-horizontal-overflow'],
+    [{scrollWidth: 900, className: 'ReactVirtualized__Grid'}, 'virtualized-content']
+  ]) {
+    const f = fixture(), el = pane(f, config), original = snapshot(el), x = el.scrollLeft;
+    const result = await f.run();
+    assert.equal(result.ok, false); assert.equal(result.code, code); assert.equal(result.restored, true);
+    assert.equal(snapshot(el), original); assert.equal(el.scrollLeft, x);
+    assert.equal(f.context.__gulirExpansion, undefined);
+  }
+});
+
+test('late horizontal growth is rejected before a partial capture can be returned', async () => {
+  const f = fixture(), el = pane(f, {scrollWidth: 900});
+  assert.equal((await f.run()).ok, true);
+  el.style.setProperty('width', '800px', 'important');
+  assert.equal(f.context.__gulirExpansion.check().code, 'layout-width-changed');
+  assert.equal(f.context.__gulirExpansion.restore().restored, true);
+});
+
+test('new overlap with an originally separate sibling fails safely and restores', async () => {
+  const f = fixture(), el = pane(f, {scrollWidth: 900, scrollLeft: 40});
+  f.doc.body.append(f.element({width: 100, height: 100, left: 500}));
+  const before = snapshot(el), result = await f.run();
+  assert.equal(result.code, 'horizontal-layout-overlap'); assert.equal(result.restored, true);
+  assert.equal(snapshot(el), before); assert.equal(el.scrollLeft, 40);
 });

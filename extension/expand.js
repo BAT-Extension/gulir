@@ -16,6 +16,7 @@ export async function expandScrollableContent(options = {}) {
   const expanded = new Set(), expandedFrames = new Set(), inaccessible = new Set(), observers = [];
   const originallyMissingStyle = new Set();
   const changedProperties = new Map(), tracked = new Map(), windows = new Map();
+  const horizontalNeighbors = new Map();
   // Discovery counts document elements once. Virtual-list inspection may walk
   // the same descendants for several nested panels; bound that work separately
   // instead of charging those visits against the document complexity limit.
@@ -202,22 +203,69 @@ export async function expandScrollableContent(options = {}) {
   const remember = el => {
     if (!tracked.has(el)) {
       const c = css(el), rect = el.getBoundingClientRect();
-      tracked.set(el, {width: rect.width, clientWidth: el.clientWidth, height: 0,
+      tracked.set(el, {width: rect.width, captureWidth: rect.width, horizontal: false, clientWidth: el.clientWidth, height: 0,
         cssWidth: c.width, boxSizing: c.boxSizing, padding: (parseFloat(c.paddingTop) || 0) + (parseFloat(c.paddingBottom) || 0),
         borders: (parseFloat(c.borderTopWidth) || 0) + (parseFloat(c.borderBottomWidth) || 0)});
     }
     saveScroll(el);
     return tracked.get(el);
   };
-  const resize = (el, target, frame = false) => {
+  // A fixed grid track or positioned sibling can cover newly revealed columns
+  // even when scrollWidth fits. Record neighboring painted boxes before widening
+  // and refuse a newly overlapping or squeezed layout rather than claim success.
+  const rememberNeighbors = el => {
+    if (horizontalNeighbors.has(el)) return;
+    const neighbors = [], initial = el.getBoundingClientRect();
+    for (let branch = el; branch; branch = parentOf(branch)) {
+      const root = branch.getRootNode?.();
+      const parent = branch.parentElement || (root?.host ? root : null);
+      if (!parent) continue;
+      const pending = [...parent.children].filter(sibling => sibling !== branch);
+      while (pending.length) {
+        const sibling = pending.pop();
+        if (++inspectionCount > limits.nodes * 4)
+          fail('inspection-limit', 'Pemeriksaan tata letak horizontal melebihi batas aman. Tidak ada gambar sebagian yang disimpan.');
+        if (inspectionCount % 100 === 0) assertBudget();
+        const rect = sibling.getBoundingClientRect();
+        if (rect.width < 2 || rect.height < 2) {
+          // display:contents and zero-size wrappers can still paint children.
+          for (const child of sibling.children || []) pending.push(child);
+          continue;
+        }
+        const overlapX = Math.max(0, Math.min(initial.right, rect.right) - Math.max(initial.left, rect.left));
+        const overlapY = Math.max(0, Math.min(initial.bottom, rect.bottom) - Math.max(initial.top, rect.top));
+        neighbors.push({el: sibling, width: rect.width, overlapX, overlapY});
+        if (overlapX <= 1 || overlapY <= 1) {
+          // Preserve attachment/sidebar columns in ordinary flex and auto-table
+          // layouts. Fixed tracks that still overlap are rejected by enforce.
+          const c = css(sibling);
+          const extras = (parseFloat(c.paddingLeft) || 0) + (parseFloat(c.paddingRight) || 0) +
+            (parseFloat(c.borderLeftWidth) || 0) + (parseFloat(c.borderRightWidth) || 0);
+          set(sibling, 'min-width', Math.max(0, rect.width - (c.boxSizing === 'border-box' ? 0 : extras)) + 'px');
+        }
+      }
+    }
+    horizontalNeighbors.set(el, neighbors);
+  };
+  const resize = (el, target, frame = false, targetWidth = null) => {
     const original = remember(el);
-    boundSize(Math.max(1, original.width), target);
-    // Keep the original outer width. In particular, removing an inner vertical
-    // scrollbar must not resize a flex/grid sibling or a percentage-width frame.
     const c = css(el), rect = el.getBoundingClientRect();
+    // Vertical-only panels retain their original width. A real horizontal
+    // scroller is widened deliberately, then the same bounded viewport tiler
+    // captures its rightmost pixels as part of the single page PNG.
+    if (targetWidth !== null) {
+      rememberNeighbors(el);
+      if (c.direction === 'rtl')
+        fail('rtl-horizontal-overflow', 'Panel gulir horizontal kanan-ke-kiri belum aman diperluas. Tidak ada gambar sebagian yang disimpan.');
+      const scrollbarWidth = frame ? 0 : Math.max(0, el.offsetWidth - el.clientWidth -
+        (parseFloat(c.borderLeftWidth) || 0) - (parseFloat(c.borderRightWidth) || 0));
+      original.captureWidth = Math.max(original.captureWidth, Math.ceil(targetWidth + scrollbarWidth));
+      original.horizontal = true;
+    }
+    boundSize(Math.max(1, original.captureWidth), target);
     const horizontalExtras = (parseFloat(c.paddingLeft) || 0) + (parseFloat(c.paddingRight) || 0) +
       (parseFloat(c.borderLeftWidth) || 0) + (parseFloat(c.borderRightWidth) || 0);
-    const width = Math.max(0, original.width - (c.boxSizing === 'border-box' ? 0 : horizontalExtras));
+    const width = Math.max(0, original.captureWidth - (c.boxSizing === 'border-box' ? 0 : horizontalExtras));
     for (const prop of ['width', 'min-width', 'max-width']) set(el, prop, width + 'px');
     set(el, 'transition-property', 'none');
     set(el, 'scroll-behavior', 'auto'); set(el, 'scroll-snap-type', 'none'); set(el, 'overflow-anchor', 'none');
@@ -230,20 +278,22 @@ export async function expandScrollableContent(options = {}) {
       if (el.offsetWidth - el.clientWidth - (parseFloat(c.borderLeftWidth) || 0) - (parseFloat(c.borderRightWidth) || 0) > 2)
         set(el, 'scrollbar-gutter', 'stable');
       set(el, 'overflow-y', 'auto');
+      if (original.horizontal) set(el, 'overflow-x', 'auto');
     }
     // scrollHeight excludes the horizontal scrollbar, while CSS height includes
     // its occupied space. Preserve that scrollbar (and width) but make room for
     // it, otherwise a classic 15px bar leaves the last 15px permanently clipped.
     const scrollbarHeight = frame ? 0 : Math.max(0,
       (el.offsetHeight ?? el.getBoundingClientRect().height) - el.clientHeight - original.borders);
-    boundSize(Math.max(1, original.width), target + scrollbarHeight);
+    boundSize(Math.max(1, original.captureWidth), target + scrollbarHeight);
     const height = Math.ceil(target + scrollbarHeight - (c.boxSizing === 'border-box' ? 0 : original.padding + original.borders));
     set(el, 'height', Math.max(1, height) + 'px');
     set(el, 'min-height', Math.max(1, height) + 'px');
     original.height = Math.max(original.height, target);
-    resetScroll(el, {x: scrolls.get(el).x, y: 0});
+    resetScroll(el, {x: original.horizontal ? 0 : scrolls.get(el).x, y: 0});
     if (frame) expandedFrames.add(el); else expanded.add(el);
-    return Math.abs(el.getBoundingClientRect().height - rect.height) > 0.5;
+    const resized = el.getBoundingClientRect();
+    return Math.abs(resized.height - rect.height) > 0.5 || Math.abs(resized.width - rect.width) > 0.5;
   };
   const settle = () => new Promise(resolve => {
     let done = false;
@@ -267,6 +317,7 @@ export async function expandScrollableContent(options = {}) {
         // Sequential screenshots can include clocks/animated text. Reject
         // structural row replacement, not ordinary text/paint updates.
         if (!structuralMutation(record)) return false;
+        if (horizontalNeighbors.size) return true;
         for (const el of expanded) if (el.ownerDocument === doc && el.contains(record.target)) return true;
         return expandedFrames.size > 0 && documents.some(entry => entry.doc === doc && entry.frame);
       })) mutationFailure = true;
@@ -296,13 +347,13 @@ export async function expandScrollableContent(options = {}) {
             el.scrollWidth <= el.clientWidth + 2 && el.scrollHeight <= el.clientHeight + 2) continue;
         if (hiddenOrExcluded(el)) continue;
         const c = css(el);
-        if (el !== doc.documentElement && el !== doc.scrollingElement &&
-            el.scrollWidth > el.clientWidth + 2 &&
-            (/^(auto|scroll|overlay)$/.test(c.overflowX) || el.scrollLeft > 0 ||
-             (/^(auto|scroll|overlay)$/.test(c.overflowY) && el.scrollHeight > el.clientHeight + 2)))
-          fail('nested-horizontal-overflow', 'Panel memiliki isi gulir horizontal yang belum didukung. Tidak ada gambar sebagian yang disimpan.');
-        if (el !== doc.documentElement && el !== doc.scrollingElement &&
-            /^(auto|scroll|overlay)$/.test(c.overflowY) && el.scrollHeight > el.clientHeight + 2) {
+        const independent = el !== doc.documentElement && el !== doc.scrollingElement;
+        const horizontal = independent && el.scrollWidth > el.clientWidth + 2 &&
+          (/^(auto|scroll|overlay)$/.test(c.overflowX) || Math.abs(el.scrollLeft) > 0 ||
+           (/^(auto|scroll|overlay)$/.test(c.overflowY) && el.scrollHeight > el.clientHeight + 2));
+        const vertical = independent && /^(auto|scroll|overlay)$/.test(c.overflowY) &&
+          el.scrollHeight > el.clientHeight + 2;
+        if (horizontal || vertical) {
           normalizeFixed(el);
           if (virtualized(el)) fail('virtualized-content', 'Panel memakai daftar virtual. Seluruh isi belum tersedia sekaligus, sehingga screenshot dibatalkan.');
           candidates.add(el);
@@ -334,12 +385,26 @@ export async function expandScrollableContent(options = {}) {
     if (mutationFailure) fail('content-changed', 'Isi panel berubah saat screenshot. Muat semua konten lalu ulangi.');
     for (const [el, original] of tracked) {
       if (el.isConnected === false) fail('content-changed', 'Panel berubah saat screenshot.');
-      if (Math.abs(el.getBoundingClientRect().width - original.width) > 1)
+      if (Math.abs(el.getBoundingClientRect().width - original.captureWidth) > 1)
         fail('layout-width-changed', 'Lebar panel berubah saat diperluas. Screenshot dibatalkan agar isi tidak terpotong.');
       if (el.tagName?.toLowerCase() !== 'iframe' && el.scrollHeight > el.clientHeight + 2)
         fail('content-height-changed', 'Tinggi isi panel berubah atau tetap terpotong. Screenshot dibatalkan. Kode PANEL_HEIGHT: ' + el.tagName + ', ' + el.scrollHeight + '/' + el.clientHeight + ' px, overflow=' + css(el).overflowY + ', position=' + css(el).position + '.');
-      if (Math.abs(el.scrollTop) > 1 || Math.abs(el.scrollLeft - scrolls.get(el).x) > 1)
+      if (el.tagName?.toLowerCase() !== 'iframe' && el.scrollWidth > el.clientWidth + 2)
+        fail('content-width-changed', 'Lebar isi panel berubah atau tetap terpotong. Tidak ada gambar sebagian yang disimpan.');
+      if (Math.abs(el.scrollTop) > 1 || Math.abs(el.scrollLeft - (original.horizontal ? 0 : scrolls.get(el).x)) > 1)
         fail('panel-scrolled', 'Panel digulir saat screenshot. Jangan gulir sampai selesai.');
+    }
+    for (const [el, neighbors] of horizontalNeighbors) {
+      const rect = el.getBoundingClientRect();
+      for (const neighbor of neighbors) {
+        const other = neighbor.el.getBoundingClientRect();
+        const overlapX = Math.max(0, Math.min(rect.right, other.right) - Math.max(rect.left, other.left));
+        const overlapY = Math.max(0, Math.min(rect.bottom, other.bottom) - Math.max(rect.top, other.top));
+        if (neighbor.el.isConnected === false || other.width < neighbor.width - 1 ||
+            (overlapX > 1 && overlapY > 1 &&
+             (overlapX > neighbor.overlapX + 1 || overlapY > neighbor.overlapY + 1)))
+          fail('horizontal-layout-overlap', 'Panel horizontal menutupi atau mempersempit bagian halaman lain. Screenshot dibatalkan agar tidak terpotong.');
+      }
     }
     for (const {doc, frame, win} of documents) {
       const size = metrics(doc); boundSize(size.width, size.height);
@@ -369,31 +434,42 @@ export async function expandScrollableContent(options = {}) {
       let changed = false;
       for (const el of [...candidates].reverse()) {
         const c = css(el), borders = (parseFloat(c.borderTopWidth) || 0) + (parseFloat(c.borderBottomWidth) || 0);
-        if (el.scrollHeight > el.clientHeight + 2) changed = resize(el, el.scrollHeight + borders) || changed;
+        const wide = el.scrollWidth > el.clientWidth + 2;
+        if (wide || el.scrollHeight > el.clientHeight + 2) {
+          const borderX = (parseFloat(c.borderLeftWidth) || 0) + (parseFloat(c.borderRightWidth) || 0);
+          changed = resize(el, el.scrollHeight + borders, false, wide ? el.scrollWidth + borderX : null) || changed;
+        }
         for (let at = parentOf(el); at; at = parentOf(at)) {
           if (at === at.ownerDocument.documentElement || at === at.ownerDocument.scrollingElement) break;
           const ac = css(at);
           if (hiddenOrExcluded(at)) fail('clipped-ancestor', 'Panel berada dalam area tersembunyi yang tidak aman diperluas.');
           if (ac.position === 'fixed') normalizeFixed(at);
-          if (at.scrollHeight > at.clientHeight + 2 &&
-              (/^(hidden|clip|auto|scroll|overlay)$/.test(ac.overflowY) ||
-               (ac.maxHeight && ac.maxHeight !== 'none') ||
-               (at !== at.ownerDocument.documentElement && at !== at.ownerDocument.body &&
-                at.style.getPropertyValue('height') && at.style.getPropertyValue('height') !== 'auto'))) {
+          const wideAncestor = at.scrollWidth > at.clientWidth + 2 &&
+            /^(hidden|clip|auto|scroll|overlay)$/.test(ac.overflowX);
+          const tallAncestor = at.scrollHeight > at.clientHeight + 2 &&
+            (/^(hidden|clip|auto|scroll|overlay)$/.test(ac.overflowY) ||
+             (ac.maxHeight && ac.maxHeight !== 'none') ||
+             (at !== at.ownerDocument.body && at.style.getPropertyValue('height') &&
+              at.style.getPropertyValue('height') !== 'auto'));
+          if (wideAncestor || tallAncestor) {
             const border = (parseFloat(ac.borderTopWidth) || 0) + (parseFloat(ac.borderBottomWidth) || 0);
-            changed = resize(at, at.scrollHeight + border) || changed;
+            const borderX = (parseFloat(ac.borderLeftWidth) || 0) + (parseFloat(ac.borderRightWidth) || 0);
+            changed = resize(at, at.scrollHeight + border, false,
+              wideAncestor ? at.scrollWidth + borderX : null) || changed;
           }
         }
       }
       for (const entry of [...documents].reverse()) {
         const size = metrics(entry.doc); boundSize(size.width, size.height);
         if (!entry.frame) continue;
-        if (size.width > entry.win.innerWidth + 2)
-          fail('frame-horizontal-overflow', 'Frame memiliki isi gulir horizontal yang belum didukung tanpa mengubah tata letak.');
         const c = css(entry.frame);
         const extra = (parseFloat(c.borderTopWidth) || 0) + (parseFloat(c.borderBottomWidth) || 0) +
           (parseFloat(c.paddingTop) || 0) + (parseFloat(c.paddingBottom) || 0);
-        if (size.height > entry.win.innerHeight + 2) changed = resize(entry.frame, size.height + extra, true) || changed;
+        const wideFrame = size.width > entry.win.innerWidth + 2;
+        const extraX = (parseFloat(c.borderLeftWidth) || 0) + (parseFloat(c.borderRightWidth) || 0) +
+          (parseFloat(c.paddingLeft) || 0) + (parseFloat(c.paddingRight) || 0);
+        if (wideFrame || size.height > entry.win.innerHeight + 2)
+          changed = resize(entry.frame, size.height + extra, true, wideFrame ? size.width + extraX : null) || changed;
         // Frame element itself may be clipped by a constrained parent.
         if (expandedFrames.has(entry.frame)) candidates.add(entry.frame);
       }
