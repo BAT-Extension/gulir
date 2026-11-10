@@ -16,12 +16,26 @@ function fixture({width = 400, height = 300} = {}) {
     removeEventListener(name, fn) { if (listeners.get(name) === fn) listeners.delete(name); },
     scrollTo({left, top}) { win.scrollX = left; win.scrollY = top; },
     MutationObserver: class {
-      constructor(fn) { this.fn = fn; this.disconnected = false; observers.push(this); }
-      observe() {}
+      constructor(fn) { this.fn = fn; this.disconnected = false; this.records = []; observers.push(this); }
+      observe(root) { this.root = root; }
+      takeRecords() { const records = this.records; this.records = []; return records; }
       disconnect() { this.disconnected = true; }
     }
   };
   const doc = {defaultView: win, querySelectorAll: () => [doc.documentElement, doc.body, ...doc.body.querySelectorAll('*')]};
+  doc.createTreeWalker = root => {
+    const stack = [{children: root === doc ? [doc.documentElement] : root.children, index: 0}];
+    return {nextNode() {
+      while (stack.length) {
+        const top = stack[stack.length - 1];
+        if (top.index >= top.children.length) { stack.pop(); continue; }
+        const el = top.children[top.index++];
+        if (el.children.length) stack.push({children: el.children, index: 0});
+        return el;
+      }
+      return null;
+    }};
+  };
   const defaults = {position: 'static', overflowY: 'visible', display: 'block', visibility: 'visible', opacity: '1',
     contentVisibility: 'visible', boxSizing: 'border-box', contain: 'none', transform: 'none', perspective: 'none',
     filter: 'none', paddingTop: '0px', paddingBottom: '0px', paddingLeft: '0px', paddingRight: '0px',
@@ -221,7 +235,7 @@ test('document element budget is shared across same-origin frames and shadow roo
   frame.contentDocument = child.doc;
   const host = child.doc.body.append(child.element({height: 200}));
   const inner = child.element({height: 100, content: 900, css: {overflowY: 'auto'}});
-  const shadow = {host, querySelectorAll: () => [inner]};
+  const shadow = {host, children: [inner], querySelectorAll: () => [inner]};
   host.shadowRoot = shadow; inner.getRootNode = () => shadow;
   Object.defineProperty(child.win, 'innerHeight', {get: () => frame.clientHeight});
   const count = f.doc.querySelectorAll('*').length + child.doc.querySelectorAll('*').length + 1;
@@ -336,10 +350,10 @@ test('text-only clock mutations are allowed but structural replacement is reject
 test('open shadow-root panels get their own structural observer', async () => {
   const f = fixture(), host = f.doc.body.append(f.element({height: 300}));
   const inner = f.element({height: 150, content: 800, css: {overflowY: 'auto'}});
-  const shadow = {host, querySelectorAll: () => [inner]}; host.shadowRoot = shadow; inner.getRootNode = () => shadow;
+  const shadow = {host, children: [inner], querySelectorAll: () => [inner]}; host.shadowRoot = shadow; inner.getRootNode = () => shadow;
   assert.equal((await f.run()).ok, true); assert.equal(inner.clientHeight, 800);
   assert.equal(f.observers.length, 2);
-  f.observers[0].fn([{type: 'childList', target: inner, addedNodes: [{nodeType: 1}], removedNodes: []}]);
+  f.observers.find(observer => observer.root === shadow).fn([{type: 'childList', target: inner, addedNodes: [{nodeType: 1}], removedNodes: []}]);
   assert.equal(f.context.__gulirExpansion.check().ok, false);
   f.context.__gulirExpansion.restore(); assert.ok(f.observers.every(observer => observer.disconnected));
 });
@@ -353,4 +367,89 @@ test('same-origin iframe height expansion also lifts its clipped ancestor', asyn
   const result = await f.run();
   assert.equal(result.ok, true); assert.equal(frame.clientHeight, 1000); assert.equal(outer.clientHeight, 1000);
   f.context.__gulirExpansion.restore(); assert.equal(outer.clientHeight, 200); assert.equal(frame.clientHeight, 200);
+});
+
+test('discovery and virtual inspection stream without whole-subtree queries', async () => {
+  const f = fixture(), el = pane(f, {scrollTop: 19});
+  for (let i = 0; i < 5; i++) el.append(f.element({height: 20}));
+  const elements = f.doc.querySelectorAll('*');
+  const count = elements.length;
+  f.doc.querySelectorAll = () => { throw Error('eager document query'); };
+  for (const at of elements) at.querySelectorAll = () => { throw Error('eager subtree query'); };
+  const result = await f.run({maxNodes: count});
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(f.context.__gulirExpansion.restore().restored, true);
+  assert.equal(el.scrollTop, 19);
+});
+
+test('streaming stops at the node boundary instead of consuming the entire tree', async () => {
+  const f = fixture();
+  for (let i = 0; i < 100; i++) f.doc.body.append(f.element({height: 2, hidden: true}));
+  const create = f.doc.createTreeWalker;
+  let visits = 0;
+  f.doc.createTreeWalker = root => {
+    const walker = create(root);
+    return {nextNode() { visits++; return walker.nextNode(); }};
+  };
+  const result = await f.run({maxNodes: 10});
+  assert.equal(result.code, 'node-limit'); assert.equal(result.restored, true);
+  assert.equal(visits, 11);
+});
+
+test('larger node budget remains clamped even when a caller requests an unbounded scan', async () => {
+  const f = fixture();
+  let visits = 0;
+  // A lazy flat tree supplies fresh zero-sized elements without allocating a
+  // 100,001-element fixture before the guard can be exercised.
+  f.doc.createTreeWalker = () => ({nextNode() {
+    visits++;
+    return {tagName: 'SPAN', scrollTop: 0, scrollLeft: 0,
+      scrollWidth: 0, clientWidth: 0, scrollHeight: 0, clientHeight: 0};
+  }});
+  const result = await f.run({maxNodes: 1000000000});
+  assert.equal(result.code, 'node-limit'); assert.equal(result.restored, true);
+  assert.match(result.error, /PANEL_NODES: 100001\/100000/);
+  assert.equal(visits, 100001);
+});
+
+test('non-scrolling wrappers do not hide an overflowing descendant', async () => {
+  const f = fixture();
+  const wrapper = f.doc.body.append(f.element({height: 200}));
+  const el = wrapper.append(f.element({height: 100, content: 900, css: {overflowY: 'auto'}, scrollTop: 31}));
+  const result = await f.run();
+  assert.equal(result.ok, true); assert.equal(el.clientHeight, 900);
+  assert.equal(f.context.__gulirExpansion.restore().restored, true);
+  assert.equal(el.clientHeight, 100); assert.equal(el.scrollTop, 31);
+});
+
+test('synchronous discovery mutation aborts before resizing and restores owned styles', async () => {
+  const f = fixture(), el = pane(f, {css: {position: 'fixed', overflowY: 'auto'}, scrollTop: 17});
+  const before = snapshot(el), set = el.style.setProperty;
+  let added;
+  el.style.setProperty = (prop, value, priority) => {
+    set(prop, value, priority);
+    if (prop === 'position' && value === 'absolute' && !added) {
+      added = f.doc.body.append(f.element({height: 2}));
+      for (const observer of f.observers) observer.records.push({
+        type: 'childList', target: f.doc.body, addedNodes: [{nodeType: 1}], removedNodes: []
+      });
+    }
+  };
+  const result = await f.run();
+  assert.equal(result.code, 'content-changed'); assert.equal(result.expandedContainers, 0);
+  assert.equal(result.restored, true); assert.equal(snapshot(el), before);
+  assert.equal(el.scrollTop, 17); assert.ok(f.doc.body.children.includes(added));
+});
+
+test('text-only discovery mutations do not abort a stable panel', async () => {
+  const f = fixture(), el = pane(f, {css: {position: 'fixed', overflowY: 'auto'}});
+  const set = el.style.setProperty;
+  el.style.setProperty = (prop, value, priority) => {
+    set(prop, value, priority);
+    for (const observer of f.observers) observer.records.push({
+      type: 'childList', target: el, addedNodes: [{nodeType: 3}], removedNodes: [{nodeType: 3}]
+    });
+  };
+  assert.equal((await f.run()).ok, true);
+  assert.equal(f.context.__gulirExpansion.restore().restored, true);
 });

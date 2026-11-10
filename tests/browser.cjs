@@ -17,10 +17,17 @@ const report={artifactDirectory:work,executablePath,testOnlyInstrumentation:true
 const record=(name,status='PASSED',detail)=>{report.checks.push({name,status,detail});console.log(status+' '+name+(detail?': '+detail:''));};
 const server=http.createServer((req,res)=>{
  const route=new URL(req.url,'http://localhost').pathname;
- if(route==='/dense-nested'||route==='/dense-over-limit'){
+ if(['/dense-nested','/dense-previous-limit','/dense-large','/dense-over-limit'].includes(route)){
   res.setHeader('Content-Type','text/html');
+  const rows=route==='/dense-over-limit'?4800:route==='/dense-large'?2400:route==='/dense-previous-limit'?720:420;
+  const rowHeight=['/dense-large','/dense-over-limit'].includes(route)?1:4;
   const row='<div class="row">'+('<span></span>'.repeat(20))+'</div>';
-  res.end('<!doctype html><style>html,body{margin:0}#outer{width:600px;height:300px;overflow:auto}#inner{height:200px;overflow:auto}.row{height:4px;display:flex}.row span{display:block;width:20px;height:4px;background:rgb(0,128,255)}footer{height:40px;background:lime}#tail{height:160px}</style><div id="outer"><div id="inner">'+row.repeat(route==='/dense-over-limit'?720:420)+'<footer></footer></div><div id="tail"></div></div>');
+  res.end('<!doctype html><style>html,body{margin:0}#outer{width:600px;height:300px;overflow:auto}#inner{height:200px;overflow:auto}.row{height:'+rowHeight+'px;display:flex}.row span{display:block;width:20px;height:'+rowHeight+'px;background:rgb(0,128,255)}footer{height:40px;background:lime}#tail{height:160px}</style><div id="outer"><div id="inner">'+row.repeat(rows)+'<footer></footer></div><div id="tail"></div></div>');
+  return;
+ }
+ if(route==='/mutating-discovery'){
+  res.setHeader('Content-Type','text/html');
+  res.end('<!doctype html><style>html,body{margin:0}#wrapper{height:250px}gulir-moving-panel{display:block;position:fixed;top:0;left:0;width:600px;height:200px;overflow:auto}#later{width:600px;height:200px;overflow:auto}.data{height:1000px;background:linear-gradient(red,blue)}</style><div id="wrapper"><gulir-moving-panel id="mutator"><div class="data"></div></gulir-moving-panel></div><div id="later"><div class="data"></div></div><script>customElements.define("gulir-moving-panel",class extends HTMLElement{static get observedAttributes(){return ["style"]}attributeChangedCallback(){if(!window.moved&&this.style.position==="absolute"){window.moved=true;document.body.append(this.parentElement)}}});</script>');
   return;
  }
  if(route==='/entropy'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><style>html,body{margin:0;width:4000px;height:5000px}canvas{display:block}</style><canvas width=4000 height=5000></canvas><script>const c=document.querySelector("canvas").getContext("2d"),im=c.createImageData(4000,5000);let seed=123456789;for(let i=0;i<im.data.length;i+=4){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;im.data[i]=seed&255;im.data[i+1]=(seed>>>8)&255;im.data[i+2]=(seed>>>16)&255;im.data[i+3]=255;}c.putImageData(im,0,0);</script>');return;}
@@ -162,7 +169,7 @@ async function denseRegression(){
   const denseSnapshot=()=>dense.evaluate(()=>['html','body','#outer','#inner'].map(sel=>{const e=document.querySelector(sel);return {style:e.getAttribute('style'),x:e.scrollLeft,y:e.scrollTop,h:sel==='html'?null:e.clientHeight};}));
   const denseBefore=await denseSnapshot();
   const denseNodes=await dense.evaluate(()=>document.querySelectorAll('*').length);
-  assert.ok(denseNodes>8000&&denseNodes<15000,'synthetic dense page stays below the unchanged document limit');
+  assert.ok(denseNodes>8000&&denseNodes<15000,'synthetic dense page stays below the original 15,000-element guard');
   for(let attempt=0;attempt<2;attempt++){
    const shot=await invoke(dense);
    assert.deepEqual(await dimensions(shot),[[1280,1880]]);
@@ -171,16 +178,53 @@ async function denseRegression(){
    await shot.close();
   }
   record('dense '+denseNodes+'-element nested page: repeated one-PNG capture includes final panel pixels and restores styles/scroll');
+
+  await dense.close();
+  for(const [route,rows,rowHeight] of [['/dense-previous-limit',720,4],['/dense-large',2400,1]]){
+    const large=await pageAt(route);
+    await large.evaluate(()=>{document.querySelector('#outer').scrollTop=23;document.querySelector('#inner').scrollTop=47;});
+    const snapshot=()=>large.evaluate(()=>['html','body','#outer','#inner'].map(sel=>{const e=document.querySelector(sel);return {style:e.getAttribute('style'),x:e.scrollLeft,y:e.scrollTop,h:sel==='html'?null:e.clientHeight};}));
+    const before=await snapshot(),count=await large.evaluate(()=>document.querySelectorAll('*').length);
+    assert.ok(count>15000&&count<100000);
+    const started=Date.now(),shot=await invoke(large),bottom=rows*rowHeight;
+    assert.deepEqual(await dimensions(shot),[[1280,bottom+200]]);
+    assert.deepEqual(await sample(shot,[[100,1],[100,Math.floor(bottom/2)],[100,bottom-1],[100,bottom+10],[100,bottom+39]]),[[0,128,255],[0,128,255],[0,128,255],[0,255,0],[0,255,0]]);
+    assert.deepEqual(await snapshot(),before);
+    await shot.close();
+    record('large '+count+'-element nested page: one complete PNG, final pixels and exact restoration','PASSED',String(Date.now()-started)+' ms');
+    if(route==='/dense-large'){
+      await large.evaluate(()=>document.querySelector('#inner .row:last-of-type span:last-child').className='ReactVirtualized__Grid');
+      const rejected=await invoke(large,true);
+      assert.match(await rejected.locator('#status').innerText(),/daftar virtual/);
+      assert.equal(await rejected.locator('#images img').count(),0);
+      assert.deepEqual(await snapshot(),before);
+      await rejected.close();
+      record('virtualized marker after 50,000 elements is still detected; zero images and exact restoration');
+    }
+    await large.close();
+  }
   const over=await pageAt('/dense-over-limit');
   await over.evaluate(()=>{document.querySelector('#outer').scrollTop=23;document.querySelector('#inner').scrollTop=47;});
   const overSnapshot=()=>over.evaluate(()=>['#outer','#inner'].map(sel=>{const e=document.querySelector(sel);return {style:e.getAttribute('style'),y:e.scrollTop,h:e.clientHeight};}));
   const overBefore=await overSnapshot(),rejected=await invoke(over,true);
-  assert.match(await rejected.locator('#status').innerText(),/PANEL_NODES: 15001\/15000/);
+  assert.match(await rejected.locator('#status').innerText(),/PANEL_NODES: 100001\/100000/);
   assert.doesNotMatch(await rejected.locator('#status').innerText(),/DevTools|kebijakan Chrome/);
   assert.equal(await rejected.locator('#images img').count(),0);
   assert.deepEqual(await overSnapshot(),overBefore);
-  await rejected.close();
+  await rejected.close(); await over.close();
   record('actual DOM limit rejects with count-only diagnostic, no partial image, and exact panel restoration');
+  const mutating=await pageAt('/mutating-discovery');
+  await mutating.evaluate(()=>{document.querySelector('#mutator').scrollTop=37;document.querySelector('#later').scrollTop=47;});
+  const mutationSnapshot=()=>mutating.evaluate(()=>['#mutator','#later'].map(sel=>{const el=document.querySelector(sel);return {style:el.getAttribute('style'),scroll:el.scrollTop,height:el.clientHeight};}));
+  const mutationBefore=await mutationSnapshot(),mutationShot=await invoke(mutating,true);
+  assert.equal(await mutating.evaluate(()=>window.moved),true,'native custom element must reparent during style writes');
+  assert.match(await mutationShot.locator('#status').innerText(),/berubah saat memeriksa panel/);
+  assert.equal(await mutationShot.locator('#images img').count(),0);
+  assert.deepEqual(await mutationSnapshot(),mutationBefore);
+  assert.deepEqual(await mutating.evaluate(()=>[...document.body.children].filter(el=>['wrapper','later'].includes(el.id)).map(el=>el.id)),['later','wrapper'],'site-owned reparenting is not undone');
+  await mutationShot.close();await mutating.close();
+  record('native custom-element reparenting during discovery rejects with zero images and restores owned styles/scroll');
+
 
 }
 (async()=>{

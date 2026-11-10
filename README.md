@@ -1,4 +1,4 @@
-# Gulir 1.2.10 — release candidate
+# Gulir 1.2.11 — release candidate
 
 Extension Chrome untuk screenshot seluruh halaman HTTP/HTTPS menjadi **satu PNG utuh**, termasuk halaman panjang. Gambar tidak diunggah ke server.
 
@@ -34,6 +34,7 @@ Pengujian mencakup satu PNG 1280 × 35.000 dan satu PNG 1280 × 70.001, lengkap 
 Batas aman saat ini:
 - Total 120 juta piksel, lebar 16.000 px, tinggi 120.000 px.
 - PNG terkompresi maksimum 256 MiB.
+- Persiapan panel: maksimum 100.000 elemen, 400.000 kunjungan pemeriksaan, dan 5 detik. Pelampauan batas dibatalkan tanpa hasil sebagian.
 - Viewport fisik maksimum 32 juta piksel, paling banyak 1.200 pengambilan viewport, maksimum 5 menit.
 - Memori kerja gambar dibatasi pada band maksimum 4MP dan paling banyak dua bitmap viewport, ditambah PNG terkompresi. Preview/browser tetap perlu memori untuk membuka gambar akhir.
 
@@ -130,3 +131,10 @@ Laporan pengguna bahwa Chrome masih ikut tertutup membuat jaminan 1.2.6 tidak me
 - Error batas memuat kode PANEL_NODES atau PANEL_WORK beserta hitungan saja, tanpa isi/URL halaman. Petunjuk DevTools/izin Chrome hanya ditampilkan jika koneksi debugger gagal.
 - Fixture sintetis 8.828 elemen mereproduksi penolakan kode lama. Versi ini menghasilkan satu PNG utuh dua kali, dengan piksel bawah dan pemulihan panel terverifikasi. Halaman JNE asli masih perlu dicoba oleh pengguna.
 - Reload extension dan gunakan preview baru berlabel GULIR 1.2.10.
+
+### Halaman padat 1.2.11
+- Laporan PANEL_NODES: 15001/15000 membuktikan halaman memang melewati batas lama. Batas kini 100.000 elemen, dengan pemeriksaan maksimum 400.000 kunjungan dan waktu persiapan tetap 5 detik.
+- Elemen ditelusuri satu per satu; tidak membuat daftar seluruh subtree sebelum memeriksa batas. Label, ikon, dan sel yang tidak memiliki overflow tidak menjalani pemeriksaan gaya/ancestor yang mahal, tetapi seluruh keturunannya tetap diperiksa.
+- Perubahan struktur saat penelusuran membatalkan capture agar panel tidak terlewat. Perubahan milik situs tidak dibatalkan; hanya gaya/posisi gulir sementara milik Gulir yang dipulihkan.
+- Fixture 15.128 dan 50.408 elemen menghasilkan satu PNG lengkap dengan piksel akhir terverifikasi. Halaman di atas 100.000 elemen dan daftar virtual tetap ditolak tanpa PNG sebagian.
+- Reload extension dan gunakan preview baru berlabel GULIR 1.2.11. Hasil pada halaman JNE asli tetap perlu dicoba oleh pengguna.

@@ -8,7 +8,7 @@ export async function expandScrollableContent(options = {}) {
   const cap = (name, fallback) => Number.isFinite(options[name]) && options[name] > 0
     ? Math.min(fallback, Math.floor(options[name])) : fallback;
   const limits = {
-    nodes: cap('maxNodes', 15000), frames: cap('maxFrames', 16), depth: cap('maxFrameDepth', 4),
+    nodes: cap('maxNodes', 100000), frames: cap('maxFrames', 16), depth: cap('maxFrameDepth', 4),
     iterations: cap('maxIterations', 8), height: cap('maxHeight', 120000),
     pixels: cap('maxPixels', 120000000), time: cap('maxPrepareMs', 5000)
   };
@@ -31,6 +31,15 @@ export async function expandScrollableContent(options = {}) {
     if (state.cleaned) fail('expired', 'Persiapan screenshot dibatalkan. Ulangi pada halaman yang stabil.');
     if (Date.now() - started > limits.time) fail('prepare-timeout', 'Persiapan panel gulir terlalu lama. Tidak ada gambar sebagian yang disimpan.');
   };
+  // Stream each tree rather than materializing an arbitrarily large NodeList
+  // before a budget check. Shadow roots and same-origin frames are visited by
+  // discovery separately, just as with querySelectorAll.
+  function* elements(root, includeRoot = false) {
+    if (includeRoot) yield root;
+    const doc = root.ownerDocument || root.host?.ownerDocument || root;
+    const walker = doc.createTreeWalker(root, 1); // NodeFilter.SHOW_ELEMENT
+    for (let el = walker.nextNode(); el; el = walker.nextNode()) yield el;
+  }
   const parentOf = el => el.parentElement || el.getRootNode?.().host || null;
   const viewOf = el => el.ownerDocument.defaultView;
   const css = el => viewOf(el).getComputedStyle(el);
@@ -157,9 +166,8 @@ export async function expandScrollableContent(options = {}) {
     }
   };
   const virtualized = el => {
-    const elements = [el, ...el.querySelectorAll('*')];
     let positioned = 0, visibleRows = 0, declaredRows = 0;
-    for (const at of elements) {
+    for (const at of elements(el, true)) {
       if (++inspectionCount > limits.nodes * 4)
         fail('inspection-limit', 'Pemeriksaan panel bertingkat melebihi batas aman. Tidak ada gambar sebagian yang disimpan. Kode PANEL_WORK: ' + inspectionCount + '/' + limits.nodes * 4 + '.');
       if (inspectionCount % 100 === 0) assertBudget();
@@ -176,8 +184,10 @@ export async function expandScrollableContent(options = {}) {
     if (declaredRows > visibleRows && declaredRows > 0) return true;
     // Windowed lists often use a tall empty spacer with absolutely positioned
     // rows. Refuse this ambiguous layout instead of making a huge blank image.
-    return positioned >= 2 && el.scrollHeight > el.clientHeight * 3 &&
-      [...el.children].some(child => child.scrollHeight >= el.scrollHeight - 2);
+    if (positioned >= 2 && el.scrollHeight > el.clientHeight * 3) {
+      for (const child of el.children) if (child.scrollHeight >= el.scrollHeight - 2) return true;
+    }
+    return false;
   };
   const metrics = doc => {
     const root = doc.documentElement, body = doc.body;
@@ -241,6 +251,14 @@ export async function expandScrollableContent(options = {}) {
     const timer = setTimeout(finish, 80);
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(finish));
   });
+  const structuralMutation = record => {
+    if (record.type !== 'childList') return false;
+    if (!record.addedNodes || !record.removedNodes) return true;
+    for (const nodes of [record.addedNodes, record.removedNodes]) {
+      for (const node of nodes) if (node.nodeType === 1) return true;
+    }
+    return false;
+  };
   const monitor = (root, doc) => {
     const win = doc.defaultView;
     if (typeof win.MutationObserver !== 'function') return;
@@ -248,9 +266,7 @@ export async function expandScrollableContent(options = {}) {
       if (records.some(record => {
         // Sequential screenshots can include clocks/animated text. Reject
         // structural row replacement, not ordinary text/paint updates.
-        if (record.type !== 'childList') return false;
-        if (record.addedNodes && record.removedNodes &&
-            ![...record.addedNodes, ...record.removedNodes].some(node => node.nodeType === 1)) return false;
+        if (!structuralMutation(record)) return false;
         for (const el of expanded) if (el.ownerDocument === doc && el.contains(record.target)) return true;
         return expandedFrames.size > 0 && documents.some(entry => entry.doc === doc && entry.frame);
       })) mutationFailure = true;
@@ -268,11 +284,16 @@ export async function expandScrollableContent(options = {}) {
     const entry = {doc, frame, win, originalDocument: doc};
     documents.push(entry);
     const visitRoot = root => {
-      for (const el of root.querySelectorAll('*')) {
+      for (const el of elements(root)) {
         if (++nodeCount > limits.nodes)
           fail('node-limit', 'Halaman terlalu kompleks untuk memperluas panel dengan aman. Kode PANEL_NODES: ' + nodeCount + '/' + limits.nodes + ' elemen.');
         if (nodeCount % 100 === 0) assertBudget();
         if (el.scrollTop || el.scrollLeft) saveScroll(el);
+        // Most table cells, labels and icons cannot be independent scrollers.
+        // Their descendants are still visited: a short wrapper can contain an
+        // overflowing child, an iframe or an open shadow tree.
+        if (el.tagName?.toLowerCase() !== 'iframe' && !el.shadowRoot &&
+            el.scrollWidth <= el.clientWidth + 2 && el.scrollHeight <= el.clientHeight + 2) continue;
         if (hiddenOrExcluded(el)) continue;
         const c = css(el);
         if (el !== doc.documentElement && el !== doc.scrollingElement &&
@@ -286,7 +307,7 @@ export async function expandScrollableContent(options = {}) {
           if (virtualized(el)) fail('virtualized-content', 'Panel memakai daftar virtual. Seluruh isi belum tersedia sekaligus, sehingga screenshot dibatalkan.');
           candidates.add(el);
         }
-        if (el.shadowRoot) { visitRoot(el.shadowRoot); monitor(el.shadowRoot, doc); }
+        if (el.shadowRoot) { monitor(el.shadowRoot, doc); visitRoot(el.shadowRoot); }
         if (el.tagName?.toLowerCase() !== 'iframe') continue;
         if (documents.length + inaccessible.size >= limits.frames + 1)
           fail('frame-limit', 'Jumlah frame melebihi batas persiapan screenshot.');
@@ -299,8 +320,8 @@ export async function expandScrollableContent(options = {}) {
         visitDocument(child, el, depth + 1);
       }
     };
-    visitRoot(doc);
     monitor(doc, doc);
+    visitRoot(doc);
   };
   const enforce = () => {
     for (const entry of documents) {
@@ -334,6 +355,11 @@ export async function expandScrollableContent(options = {}) {
   state.timer = setTimeout(state.restore, 300000);
   try {
     visitDocument(document);
+    // Custom-element style reactions can synchronously move the live walker's
+    // current node and make it skip siblings. Observe before discovery and
+    // reject structural changes before resizing; never silently miss a panel.
+    if (observers.some(observer => observer.takeRecords().some(structuralMutation)))
+      fail('content-changed', 'Isi halaman berubah saat memeriksa panel. Ulangi pada halaman yang stabil.');
     if (inaccessible.size) state.warnings.push(inaccessible.size +
       ' frame lintas-origin atau tidak dapat diakses: hanya area frame yang terlihat yang disertakan, bukan seluruh isi frame.');
     // Leaf-first expansion, followed by constrained ancestors and frame roots.
